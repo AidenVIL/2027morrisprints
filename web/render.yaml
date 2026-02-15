@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: 3d-quote-web
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: "pnpm build"
+    startCommand: "pnpm start"
+    envVars:
+      - key: NEXT_PUBLIC_SUPABASE_URL
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+      - key: SUPABASE_SERVICE_ROLE_KEY
+      - key: STRIPE_SECRET_KEY
+      - key: STRIPE_WEBHOOK_SECRET
+      - key: NEXT_PUBLIC_SITE_URL
+      - key: HOLD_AMOUNT_PENCE
+    routes:
+      - type: web
+        source: "/*"
