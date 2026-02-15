@@ -17,7 +17,7 @@ type FormValues = {
 }
 
 export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
-  const { register, handleSubmit, formState } = useForm<FormValues>({ resolver: zodResolver(schema) })
+  const { register, handleSubmit, formState } = useForm({ resolver: zodResolver(schema as any) })
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
