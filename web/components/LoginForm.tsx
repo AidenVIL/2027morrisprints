@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useRouter } from 'next/navigation'
-import { ensureSupabase } from '../lib/supabaseClient'
+import { supabase } from '../lib/supabaseBrowser'
 
 const schema = z.object({
   email: z.string().email(),
@@ -24,12 +24,12 @@ export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
   async function onSubmit(values: FormValues) {
     setLoading(true)
     try {
-      const supabase = ensureSupabase()
       const { error } = await supabase.auth.signInWithPassword({ email: values.email, password: values.password })
       if (error) throw error
       onSuccess?.()
       router.refresh()
     } catch (err: any) {
+      console.error(err)
       alert(err.message || 'Login failed')
     } finally {
       setLoading(false)

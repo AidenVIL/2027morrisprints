@@ -1,9 +1,10 @@
- 'use client';
-import { useState } from 'react';
+"use client";
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { supabase } from '../../../lib/supabaseClient';
+import { supabase } from '../../../lib/supabaseBrowser';
+import AuthCard from '../../../components/AuthCard';
 
 const schema = z.object({
   file: z.instanceof(File),
@@ -27,14 +28,33 @@ export default function NewQuote() {
   const sb = supabase;
   const { register, handleSubmit } = useForm({ resolver: zodResolver(schema as any) });
   const [loading, setLoading] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+
+  useEffect(() => {
+    // restore draft if present (optional for UX)
+    const draft = localStorage.getItem('quote_draft')
+    if (draft) {
+      // we could parse and prefill fields; skipping for brevity
+    }
+  }, [])
 
   async function onSubmit(values: any) {
     setLoading(true);
-    // upload file to storage under user_id/quote_id if signed in, otherwise under 'guest'
-    const quoteId = crypto.randomUUID();
-    const file = values.file[0];
+    // check session
     const session = await sb?.auth.getSession();
     const user = session?.data?.session?.user || null;
+    if (!user) {
+      // Not logged in: save draft and show auth panel
+      try {
+        localStorage.setItem('quote_draft', JSON.stringify(values));
+      } catch (e) { console.error('draft save failed', e) }
+      setLoading(false);
+      setShowAuth(true);
+      return;
+    }
+    // upload file to storage under user_id/quote_id
+    const quoteId = crypto.randomUUID();
+    const file = values.file[0];
     const owner = user?.id || 'guest';
     const path = `${owner}/${quoteId}/${file.name}`;
     if (!sb) {
@@ -69,6 +89,23 @@ export default function NewQuote() {
     window.location.href = `/quotes/${quoteId}`;
   }
 
+  // Called after successful auth to continue submission
+  async function continueAfterAuth() {
+    const draft = localStorage.getItem('quote_draft');
+    if (!draft) {
+      setShowAuth(false);
+      return;
+    }
+    try {
+      const values = JSON.parse(draft);
+      setShowAuth(false);
+      // small delay to allow modal to close
+      setTimeout(() => handleSubmit(onSubmit)(values), 200);
+    } catch (e) {
+      console.error('failed restoring draft', e);
+    }
+  }
+
   return (
     <div className="max-w-2xl mx-auto p-6">
       <h2 className="text-xl font-semibold mb-4">New Quote</h2>
@@ -87,8 +124,18 @@ export default function NewQuote() {
           <option value="fast">Fast</option>
         </select>
         <textarea placeholder="Notes" {...register('notes' as any)} className="border p-2 rounded w-full" />
-        <button className="px-4 py-2 bg-green-600 text-white rounded" disabled={loading}>{loading? 'Submitting...' : 'Submit (authorise card)'}</button>
+        <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded" disabled={loading}>{loading? 'Submitting...' : 'Submit (authorise card)'}</button>
       </form>
+      {showAuth && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40">
+          <div className="bg-white rounded p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-3">Please sign in to continue</h3>
+            <AuthCard onSuccess={continueAfterAuth} />
+            <div className="mt-3 text-sm text-gray-500">Or continue as guest by logging in later.</div>
+            <button type="button" className="mt-4 text-sm text-gray-600" onClick={() => setShowAuth(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
