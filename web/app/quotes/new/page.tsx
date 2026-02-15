@@ -30,13 +30,19 @@ export default function NewQuote() {
 
   async function onSubmit(values: any) {
     setLoading(true);
-    // upload file to storage under user_id/quote_id
-    const user = (await sb.auth.getUser()).data.user;
-    if (!user) return alert('Sign in required');
+    // upload file to storage under user_id/quote_id if signed in, otherwise under 'guest'
     const quoteId = crypto.randomUUID();
     const file = values.file[0];
-    const path = `${user.id}/${quoteId}/${file.name}`;
-    const { data, error } = await sb.storage.from('models').upload(path, file);
+    const session = await sb?.auth.getSession();
+    const user = session?.data?.session?.user || null;
+    const owner = user?.id || 'guest';
+    const path = `${owner}/${quoteId}/${file.name}`;
+    if (!sb) {
+      alert('Storage client not configured');
+      setLoading(false);
+      return;
+    }
+    const { data, error } = await sb.storage.from('models').upload(path, file as File);
     if (error) {
       alert('upload failed');
       setLoading(false);
@@ -44,11 +50,12 @@ export default function NewQuote() {
     }
 
     // create payment intent via server API
-    const session = await sb.auth.getSession();
-    const token = session.data.session?.access_token;
+    const token = session?.data?.session?.access_token;
+    const headers: any = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch('/api/quotes/create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers,
       body: JSON.stringify({ quoteId, path, originalName: file.name, mime: file.type, size: file.size, settings: values })
     });
     const j = await res.json();
