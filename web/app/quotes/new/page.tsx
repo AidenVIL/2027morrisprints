@@ -29,6 +29,9 @@ export default function NewQuote() {
   const { register, handleSubmit } = useForm({ resolver: zodResolver(schema as any) });
   const [loading, setLoading] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
+  const [materials, setMaterials] = useState<any[]>([])
+  const [selectedItem, setSelectedItem] = useState<string | null>(null)
+  const [estimate, setEstimate] = useState<{grams:number,timeSeconds:number,price:number}|null>(null)
 
   useEffect(() => {
     // restore draft if present (optional for UX)
@@ -36,6 +39,13 @@ export default function NewQuote() {
     if (draft) {
       // we could parse and prefill fields; skipping for brevity
     }
+    // load active inventory items
+    ;(async function(){
+      try{
+        const { data } = await sb.from('inventory_items').select('*').eq('is_active', true)
+        setMaterials(data || [])
+      }catch(e){ console.error('load materials', e) }
+    })()
   }, [])
 
   async function onSubmit(values: any) {
@@ -76,7 +86,7 @@ export default function NewQuote() {
     const res = await fetch('/api/quotes/create', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ quoteId, path, originalName: file.name, mime: file.type, size: file.size, settings: values })
+      body: JSON.stringify({ quoteId, path, originalName: file.name, mime: file.type, size: file.size, settings: values, inventory_item_id: selectedItem })
     });
     const j = await res.json();
     if (!res.ok) {
@@ -87,6 +97,22 @@ export default function NewQuote() {
 
     // redirect to quote detail
     window.location.href = `/quotes/${quoteId}`;
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>){
+    const f = e.target.files?.[0]
+    if (!f) return
+    if (!selectedItem) return alert('Select a material first to estimate')
+    const tempId = crypto.randomUUID()
+    const tempPath = `temp/${tempId}/${f.name}`
+    try{
+      const up = await sb.storage.from('models').upload(tempPath, f as File)
+      if (up.error) throw up.error
+      const res = await fetch('/api/estimates', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: tempPath, inventory_item_id: selectedItem }) })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || 'estimate failed')
+      setEstimate({ grams: j.grams, timeSeconds: j.timeSeconds, price: j.price })
+    }catch(err){ console.error('estimate', err); alert('Estimate failed: '+String(err)) }
   }
 
   // Called after successful auth to continue submission
@@ -110,11 +136,12 @@ export default function NewQuote() {
     <div className="max-w-2xl mx-auto p-6">
       <h2 className="text-xl font-semibold mb-4">New Quote</h2>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <input type="file" {...register('file' as any)} accept=".stl,.3mf,.obj" />
-        <select {...register('material' as any)} className="border p-2 rounded">
-          <option value="PLA">PLA</option>
-          <option value="PETG">PETG</option>
-          <option value="ABS">ABS</option>
+        <input onChange={handleFileChange} type="file" {...register('file' as any)} accept=".stl,.3mf,.obj" />
+        <select value={selectedItem || ''} onChange={(e)=>{ setSelectedItem(e.target.value); }} className="border p-2 rounded">
+          <option value="">Select material</option>
+          {materials.map(m=> (
+            <option key={m.id} value={m.id}>{m.material} — {m.colour} (In stock: {m.grams_available - m.grams_reserved} g)</option>
+          ))}
         </select>
         <input placeholder="Colour" {...register('colour' as any)} className="border p-2 rounded w-full" />
         <input type="number" placeholder="Infill %" {...register('infill' as any)} className="border p-2 rounded w-full" />
@@ -125,6 +152,13 @@ export default function NewQuote() {
         </select>
         <textarea placeholder="Notes" {...register('notes' as any)} className="border p-2 rounded w-full" />
         <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded" disabled={loading}>{loading? 'Submitting...' : 'Submit (authorise card)'}</button>
+        {estimate && (
+          <div className="mt-3 p-3 border rounded bg-gray-50">
+            <div>Estimated filament: <strong>{estimate.grams} g</strong></div>
+            <div>Estimated print time: <strong>{Math.round(estimate.timeSeconds/60)} min</strong></div>
+            <div>Estimated price: <strong>£{(estimate.price/100).toFixed(2)}</strong></div>
+          </div>
+        )}
       </form>
       {showAuth && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40">
