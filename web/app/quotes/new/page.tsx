@@ -139,7 +139,7 @@ export default function NewQuote() {
         <input onChange={handleFileChange} type="file" {...register('file' as any)} accept=".stl,.3mf,.obj" />
         <select value={selectedItem || ''} onChange={(e)=>{ setSelectedItem(e.target.value); }} className="border p-2 rounded">
           <option value="">Select material</option>
-          {materials.map(m=> (
+          {materials.map((m: any) => (
             <option key={m.id} value={m.id}>{m.material} — {m.colour} (In stock: {m.grams_available - m.grams_reserved} g)</option>
           ))}
         </select>
