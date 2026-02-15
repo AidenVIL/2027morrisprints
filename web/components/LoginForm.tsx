@@ -11,7 +11,10 @@ const schema = z.object({
   password: z.string().min(6)
 })
 
-type FormValues = z.infer<typeof schema>
+type FormValues = {
+  email: string
+  password: string
+}
 
 export default function LoginForm({ onSuccess }: { onSuccess?: () => void }) {
   const { register, handleSubmit, formState } = useForm<FormValues>({ resolver: zodResolver(schema) })
