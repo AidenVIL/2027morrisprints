@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
-import { ensureSupabaseAdmin } from '../../../../../lib/supabaseClient';
-import { requireAdmin } from '../../../../../lib/adminAuth';
+import { ensureSupabaseAdmin } from '../../../../lib/supabaseClient';
+import { requireAdmin } from '../../../../lib/adminAuth';
+
+// inventory list route: serves admin inventory items
 
 export async function GET(req: Request) {
   const auth = await requireAdmin(req);
