@@ -50,8 +50,14 @@ export default function InventoryPage() {
   const toast = useToast();
 
   const { isOpen, onOpen, onClose } = useDisclosure();
+  const addDisclosure = useDisclosure();
   const [selected, setSelected] = useState<Item | null>(null);
   const [movements, setMovements] = useState<any[]>([]);
+
+  const [newMaterial, setNewMaterial] = useState('');
+  const [newColour, setNewColour] = useState('');
+  const [newGrams, setNewGrams] = useState<number>(0);
+  const [newCost, setNewCost] = useState<number>(0);
 
   async function load() {
     setLoading(true);
@@ -101,18 +107,7 @@ export default function InventoryPage() {
       <Stack direction="row" justify="space-between" align="center" mb={4}>
         <Heading size="md">Inventory</Heading>
         <Stack direction="row">
-          <Button leftIcon={<Plus size={14} />} colorScheme="green" onClick={() => {
-            // open create modal via prompt flow
-            const material = prompt('Material');
-            if (!material) return;
-            const colour = prompt('Colour');
-            if (!colour) return;
-            const grams = Number(prompt('Grams available') || '0');
-            const cost = Math.round(Number(prompt('Cost per KG (£)') || '0') * 100);
-            adminFetch('/api/admin/inventory/create', { method: 'POST', body: JSON.stringify({ material, colour, grams_available: grams, cost_per_kg_pence: cost }) })
-              .then(() => { toast({ title: 'Created', status: 'success' }); load(); })
-              .catch((e: any) => toast({ title: 'Failed', description: e.message || String(e), status: 'error' }));
-          }}>Add</Button>
+          <Button leftIcon={<Plus size={14} />} colorScheme="green" onClick={addDisclosure.onOpen}>Add</Button>
         </Stack>
       </Stack>
 
@@ -190,6 +185,47 @@ export default function InventoryPage() {
           </ModalBody>
           <ModalFooter>
             <Button onClick={onClose}>Close</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Add Item Modal */}
+      <Modal isOpen={addDisclosure.isOpen} onClose={addDisclosure.onClose} size="md">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Add Inventory Item</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Stack spacing={3}>
+              <Input placeholder="Material" value={newMaterial} onChange={(e) => setNewMaterial(e.target.value)} />
+              <Input placeholder="Colour" value={newColour} onChange={(e) => setNewColour(e.target.value)} />
+              <NumberInput value={newGrams} min={0} onChange={(v) => setNewGrams(Number(v))}>
+                <NumberInputField placeholder="Grams available" />
+              </NumberInput>
+              <NumberInput value={newCost} min={0} step={0.01} onChange={(v) => setNewCost(Number(v))}>
+                <NumberInputField placeholder="Cost per KG (£)" />
+              </NumberInput>
+            </Stack>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={addDisclosure.onClose}>Cancel</Button>
+            <Button colorScheme="green" onClick={async () => {
+              if (!newMaterial.trim() || !newColour.trim()) {
+                toast({ title: 'Missing fields', description: 'Material and colour are required', status: 'warning' });
+                return;
+              }
+              const grams = Number(newGrams || 0);
+              const costPence = Math.round(Number(newCost || 0) * 100);
+              try {
+                await adminFetch('/api/admin/inventory/create', { method: 'POST', body: JSON.stringify({ material: newMaterial.trim(), colour: newColour.trim(), grams_available: grams, cost_per_kg_pence: costPence }) });
+                toast({ title: 'Created', status: 'success' });
+                addDisclosure.onClose();
+                setNewMaterial(''); setNewColour(''); setNewGrams(0); setNewCost(0);
+                load();
+              } catch (e: any) {
+                toast({ title: 'Failed', description: e.message || String(e), status: 'error' });
+              }
+            }}>Create</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
