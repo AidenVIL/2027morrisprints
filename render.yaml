@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: MorrisPrints
+    env: docker
+    plan: starter
+    region: oregon
+    rootDir: web
+    dockerfilePath: Dockerfile
+    buildCommand: ''
+    startCommand: ''
+    envVars:
+      - key: SUPABASE_URL
+        value: ''
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        value: ''
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: ''
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        value: ''
+      - key: ADMIN_APP_TOKEN
+        value: ''
