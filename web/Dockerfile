@@ -1,9 +1,9 @@
 FROM node:22-bullseye
 
-ARG PRUSA_VERSION=2.7.4
+  # Removed ARG PRUSA_VERSION since PrusaSlicer is no longer required
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime deps required by PrusaSlicer and tooling
+# PrusaSlicer removed — estimator is pure-Node
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     libxrandr2 \
     libxi6 \
-    FROM node:22-bullseye
+    # FROM node:22-bullseye
 
     ENV DEBIAN_FRONTEND=noninteractive
 

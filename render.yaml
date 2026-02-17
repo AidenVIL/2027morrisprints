@@ -2,20 +2,21 @@ services:
   - type: web
     name: MorrisPrints
     env: docker
-    plan: starter
+    plan: free
     region: oregon
     rootDir: web
     dockerfilePath: Dockerfile
-    buildCommand: ''
-    startCommand: ''
+    buildCommand: ""
+    startCommand: "npm start"
     envVars:
       - key: SUPABASE_URL
-        value: ''
+        value: "<REPLACE_WITH_SUPABASE_URL>"
       - key: SUPABASE_SERVICE_ROLE_KEY
-        value: ''
+        value: "<REPLACE_WITH_SUPABASE_SERVICE_ROLE_KEY>"
       - key: NEXT_PUBLIC_SUPABASE_URL
-        value: ''
+        value: "<REPLACE_WITH_NEXT_PUBLIC_SUPABASE_URL>"
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
-        value: ''
+        value: "<REPLACE_WITH_NEXT_PUBLIC_SUPABASE_ANON_KEY>"
       - key: ADMIN_APP_TOKEN
-        value: ''
+        value: "<REPLACE_WITH_ADMIN_APP_TOKEN>"
+      # removed PRUSA_* env vars — estimator is now pure-Node
