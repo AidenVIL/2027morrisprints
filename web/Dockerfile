@@ -36,18 +36,24 @@ WORKDIR /usr/src/app
 # Try a few common asset naming patterns and both tag formats (with and without leading 'v').
 RUN set -eux; \
   mkdir -p /opt/prusaslicer; \
-  TAG="v${PRUSA_VERSION}"; \
-  URL="https://github.com/prusa3d/PrusaSlicer/releases/download/${TAG}/PrusaSlicer-${TAG}-Linux-x86_64-gtk3.tar.xz"; \
-  echo "Downloading PrusaSlicer from $URL"; \
-  if ! wget -q -O /tmp/prusaslicer.tar.xz "$URL"; then \
-    # fallback to non-v tag
-    TAG2="${PRUSA_VERSION}"; \
-    URL2="https://github.com/prusa3d/PrusaSlicer/releases/download/${TAG2}/PrusaSlicer-${TAG2}-Linux-x86_64-gtk3.tar.xz"; \
-    echo "Primary URL failed, trying $URL2"; \
-    if ! wget -q -O /tmp/prusaslicer.tar.xz "$URL2"; then \
-      echo "Failed to download PrusaSlicer for ${PRUSA_VERSION}" >&2; exit 1; \
+  # Query GitHub Releases API for the requested tag (try v$PRUSA_VERSION then $PRUSA_VERSION)
+  ASSET_URL=""; \
+  for TAG in "v${PRUSA_VERSION}" "${PRUSA_VERSION}"; do \
+    API_URL="https://api.github.com/repos/prusa3d/PrusaSlicer/releases/tags/${TAG}"; \
+    echo "Querying $API_URL"; \
+    ASSET_URL=$(curl -s "$API_URL" | grep "browser_download_url" | cut -d '"' -f4 | grep -i linux | grep -i gtk3 | grep -E "x86_64|amd64" | grep -E '\\.(tar\\.xz|tar\\.gz|AppImage)' | head -n1 || true); \
+    if [ -n "$ASSET_URL" ]; then \
+      echo "Found asset URL: $ASSET_URL"; break; \
     fi; \
-  fi; \
+  done; \
+  if [ -z "$ASSET_URL" ]; then echo "Could not find a GTK3 linux x86_64 asset for PrusaSlicer ${PRUSA_VERSION}" >&2; exit 1; fi; \
+  echo "Downloading PrusaSlicer from $ASSET_URL"; \
+  wget -q -O /tmp/prusaslicer.asset "$ASSET_URL" || (echo "Download failed" >&2; exit 1); \
+  # Determine file type and extract
+  FILETYPE=$(file /tmp/prusaslicer.asset || true); \
+  if echo "$FILETYPE" | grep -qi "XZ"; then tar -xJf /tmp/prusaslicer.asset -C /opt/prusaslicer || (echo "tar.xz extraction failed" >&2; ls -la /tmp || true; exit 1); fi; \
+  if echo "$FILETYPE" | grep -qi "gzip"; then tar -xzf /tmp/prusaslicer.asset -C /opt/prusaslicer || (echo "tar.gz extraction failed" >&2; ls -la /tmp || true; exit 1); fi; \
+  if echo "$FILETYPE" | grep -qi "AppImage" || echo "$ASSET_URL" | grep -qi "AppImage"; then chmod +x /tmp/prusaslicer.asset; /tmp/prusaslicer.asset --appimage-extract; mv squashfs-root/* /opt/prusaslicer || true; fi; \
   echo "Extracting PrusaSlicer archive to /opt/prusaslicer"; \
   tar -xJf /tmp/prusaslicer.tar.xz -C /opt/prusaslicer || (echo "tar extraction failed" >&2; ls -la /tmp || true; exit 1); \
   echo "Listing extracted files (top-level)"; ls -la /opt/prusaslicer || true; \
