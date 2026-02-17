@@ -54,6 +54,7 @@ export async function POST(req: Request) {
     const finalPrice = Math.round(price * (1 + MARKUP_PERCENTAGE / 100));
 
     const quoteId = crypto.randomUUID();
+    const qty = Number(quantity ?? 1);
 
     // reserve inventory
     await supabaseAdmin.rpc('reserve_inventory', { p_item_id: inventory_item_id, p_grams: grams, p_quote_id: quoteId });
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
       file_path: path,
       file_original_name: originalName || path.split('/').slice(-1)[0],
       settings: settingsObj,
-      quantity: quantity || settingsObj?.quantity || 1,
+      quantity: qty,
       inventory_item_id,
       estimated_grams: grams,
       estimated_print_time_seconds: timeSeconds,
