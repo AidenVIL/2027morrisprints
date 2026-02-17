@@ -27,7 +27,7 @@ const schema = z.object({
 
 export default function NewQuote() {
   const sb = supabase;
-  const { register, handleSubmit, formState: { errors } } = useForm({ resolver: zodResolver(schema as any), defaultValues: { layerPreset: 'standard', infill: 20, quantity: 1, supports: false } });
+  const { register, handleSubmit, formState: { errors }, getValues } = useForm({ resolver: zodResolver(schema as any), defaultValues: { layerPreset: 'standard', infill: 20, quantity: 1, supports: false } });
   const [loading, setLoading] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [materials, setMaterials] = useState<any[]>([])
@@ -36,6 +36,7 @@ export default function NewQuote() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const [originalName, setOriginalName] = useState<string | null>(null);
+  const [uploadState, setUploadState] = useState<'idle'|'uploading'|'uploaded'|'error'>('idle')
   const [errorBanner, setErrorBanner] = useState<{title?:string,message:string,status?:number}|null>(null);
   const [lastRequest, setLastRequest] = useState<any>(null);
   const [lastResponse, setLastResponse] = useState<any>(null);
@@ -82,7 +83,12 @@ export default function NewQuote() {
     const quoteId = crypto.randomUUID();
     const path = storagePath || null;
     // client-side validations
-    if (!path) { setErrorBanner({ message: 'No file uploaded' }); setLoading(false); console.error('Get quote: missing storagePath', { values, storagePath }); return; }
+    if (!path || uploadState !== 'uploaded') {
+      setErrorBanner({ message: 'Please upload a model file before requesting a quote' });
+      setLoading(false);
+      console.error('Get quote: missing storagePath or not uploaded', { values, storagePath, uploadState });
+      return;
+    }
     const inventory_item_id = selectedItem || values.inventory_item_id || null;
     if (!inventory_item_id) { setErrorBanner({ message: 'Please select a material' }); setLoading(false); console.error('Get quote: missing inventory item', { values, selectedItem }); return; }
     const infill = Number(values.infill);
@@ -139,10 +145,11 @@ export default function NewQuote() {
 
   // upload-only handler called by ModelDropzone. Uploads to server and stores returned path.
   async function handleFileUpload(f: File, setProgress: (n:number)=>void) {
+    // manage upload state and only set storagePath after successful upload
     setErrorBanner(null);
     setLastRequest(null);
     setLastResponse(null);
-    setLoading(true);
+    setUploadState('uploading')
     try {
       const tempId = crypto.randomUUID();
       const owner = (await sb?.auth.getSession())?.data?.session?.user?.id || 'guest';
@@ -155,17 +162,17 @@ export default function NewQuote() {
       if (!upRes.ok || !upJson?.ok) {
         console.error('server upload failed', upRes.status, upJson);
         setErrorBanner({ message: 'Upload failed: ' + (upJson?.error || upJson?.message || 'unknown'), status: upRes.status });
-        setLoading(false);
+        setUploadState('error')
         return;
       }
       setStoragePath(upJson.path || upJson.path);
       setOriginalName(f.name);
       setSelectedFile(f);
+      setUploadState('uploaded')
     } catch (e) {
       console.error('upload exception', e);
       setErrorBanner({ message: 'Upload failed: ' + String(e) });
-    } finally {
-      setLoading(false);
+      setUploadState('error')
     }
   }
 
@@ -196,6 +203,19 @@ export default function NewQuote() {
           onFileChange={(f)=>setSelectedFile(f)}
           onUpload={async (f, setP) => { await handleFileUpload(f, setP); }}
         />
+
+        {/* Upload status UI */}
+        <div className="mt-2 text-sm">
+          {uploadState === 'uploading' && (
+            <div className="flex items-center gap-2 text-gray-600"><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/></svg> Uploading...</div>
+          )}
+          {uploadState === 'uploaded' && (
+            <div className="text-green-600">Uploaded ✓</div>
+          )}
+          {uploadState === 'error' && (
+            <div className="text-red-600">Upload failed</div>
+          )}
+        </div>
 
         <select value={selectedItem || ''} onChange={(e)=>{ setSelectedItem(e.target.value); }} className="border p-2 rounded">
           <option value="">Select material</option>
@@ -241,9 +261,22 @@ export default function NewQuote() {
           <option value="fast">Fast</option>
         </select>
         <textarea placeholder="Notes" {...register('notes' as any)} className="border p-2 rounded w-full" />
-        <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded" disabled={loading}>
-          {loading ? 'Working...' : 'Get Quote'}
-        </button>
+        {/** compute simple client-side readiness */}
+        {/* Note: keep server-side validation as authoritative */}
+        {
+          (() => {
+            const vals = getValues();
+            const invId = selectedItem || vals.inventory_item_id || null;
+            const infill = Number(vals.infill ?? 0);
+            const qty = Number(vals.quantity || 1);
+            const canSubmit = uploadState === 'uploaded' && storagePath && invId && !isNaN(infill) && infill >= 0 && infill <= 100 && !isNaN(qty) && qty >= 1;
+            return (
+              <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded disabled:opacity-50" disabled={!canSubmit || loading}>
+                {loading ? 'Working...' : 'Get Quote'}
+              </button>
+            )
+          })()
+        }
         {errorBanner && (
           <div className="mt-2 p-3 bg-red-50 border border-red-200 text-red-800 rounded">
             <div className="font-semibold">Error{errorBanner.status ? ` (status ${errorBanner.status})` : ''}</div>
