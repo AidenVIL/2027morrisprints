@@ -89,12 +89,22 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error('get-quote error', e);
     // If estimator threw a structured parse error, return ESTIMATE_FAILED with details
-    if (e instanceof Error && typeof e.message === 'string' && e.message.startsWith('ESTIMATE_PARSE_ERROR:')) {
-      try {
-        const json = JSON.parse(e.message.replace('ESTIMATE_PARSE_ERROR:',''));
-        return NextResponse.json({ ok: false, error: 'ESTIMATE_FAILED', details: json }, { status: 500 });
-      } catch (parseErr) {
-        // fallthrough to generic error
+    if (e instanceof Error && typeof e.message === 'string') {
+      if (e.message.startsWith('ESTIMATE_PARSE_ERROR:')) {
+        try {
+          const json = JSON.parse(e.message.replace('ESTIMATE_PARSE_ERROR:',''));
+          return NextResponse.json({ ok: false, error: 'ESTIMATE_FAILED', details: json }, { status: 500 });
+        } catch (parseErr) {
+          // fallthrough to generic error
+        }
+      }
+      if (e.message.startsWith('PRUSASLICER_NOT_FOUND:')) {
+        try {
+          const json = JSON.parse(e.message.replace('PRUSASLICER_NOT_FOUND:',''));
+          return NextResponse.json({ ok: false, error: 'PRUSASLICER_NOT_FOUND', details: json }, { status: 500 });
+        } catch (parseErr) {
+          // fallthrough
+        }
       }
     }
 

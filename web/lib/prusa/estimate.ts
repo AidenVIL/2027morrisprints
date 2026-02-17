@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
@@ -22,7 +22,10 @@ export async function estimate(filePath: string, opts?: { density?: number; time
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'prusa-'));
   const outGcode = path.join(tmpDir, 'out.gcode');
 
-  const bin = process.env.PRUSASLICER_BIN || '/usr/local/bin/prusa-slicer';
+  // Discover prusa-slicer binary: prefer env PRUSA_SLICER_PATH, then PATH, then /usr/local/bin
+  let bin = process.env.PRUSA_SLICER_PATH || process.env.PRUSASLICER_BIN || '';
+  const tried: string[] = [];
+  if (bin) tried.push(bin);
 
   return new Promise<PrusaEstimate>(async (resolve, reject) => {
     const warnings: string[] = [];
@@ -48,12 +51,35 @@ export async function estimate(filePath: string, opts?: { density?: number; time
       warnings.push('Failed to read STL bounds');
     }
 
-    // ensure prusa-slicer binary exists before spawning
+    // Discover binary if not already set
     try {
-      await fs.stat(bin);
+      if (!bin) {
+        // Try running `prusa-slicer --version` to see if it's on PATH
+        try {
+          const ok = spawnSync('prusa-slicer', ['--version'], { stdio: 'ignore' });
+          if (ok && ok.status === 0) {
+            bin = 'prusa-slicer';
+            tried.push('prusa-slicer (PATH)');
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // If still not set, check default location
+      if (!bin) {
+        const defaultPath = '/usr/local/bin/prusa-slicer';
+        tried.push(defaultPath);
+        const st = await fs.stat(defaultPath).then(() => true).catch(() => false);
+        if (st) bin = defaultPath;
+      }
+
+      // If we still don't have a binary, return structured error listing attempted paths
+      if (!bin) {
+        return reject(new Error('PRUSASLICER_NOT_FOUND: ' + JSON.stringify({ tried })));
+      }
     } catch (err) {
-      const details = { reason: 'PRUSASLICER_NOT_FOUND', bin };
-      return reject(new Error('ESTIMATE_PARSE_ERROR: ' + JSON.stringify(details)));
+      return reject(new Error('PRUSASLICER_NOT_FOUND: ' + JSON.stringify({ tried })));
     }
 
     // build prusa-slicer args and include overrides via --set
