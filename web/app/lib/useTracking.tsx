@@ -7,10 +7,11 @@ function getSessionId() {
     const key = 'tracking_session_id';
     let id = localStorage.getItem(key);
     if (!id) {
-      id = (globalThis.crypto && (globalThis.crypto as any).randomUUID ? (globalThis.crypto as any).randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`);
-      localStorage.setItem(key, id);
+      const newId = (globalThis.crypto && (globalThis.crypto as any).randomUUID ? (globalThis.crypto as any).randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2)}`);
+      localStorage.setItem(key, newId);
+      id = newId;
     }
-    return id;
+    return id ?? undefined;
   } catch (e) {
     return undefined;
   }
