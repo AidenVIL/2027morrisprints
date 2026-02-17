@@ -43,29 +43,26 @@ export async function POST(req: Request) {
     // analyze STL geometry
     const geom = analyzeStl(buf)
 
-    // fetch inventory item and app settings
-    // resolve inventory item: prefer provided id, otherwise try to match by material name or pick first active
+    // fetch inventory item strictly by primary key
+    const norm = (s: any) => (typeof s === 'string' ? s.trim().toLowerCase() : '')
     let itemData: any = null
-    let itemErr: any = null
-    if (inventory_item_id) {
-      const r = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available, is_active').eq('id', inventory_item_id).maybeSingle()
-      itemData = r.data; itemErr = r.error
-    }
-    if (!itemData) {
-      // try to match by material name sent from client (use wildcard, case-insensitive)
-      const materialName = String(body?.material || '').trim() || null
-      if (materialName) {
-        const pattern = `%${materialName.replace(/%/g, '')}%`
-        const r2 = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available, is_active').ilike('material', pattern).eq('is_active', true).limit(1).maybeSingle()
-        itemData = r2.data; itemErr = r2.error
+    try {
+      const r = await supabaseAdmin
+        .from('inventory_items')
+        .select('id, material, colour, density_g_per_cm3, cost_per_kg_gbp, support_multiplier, on_hand_g')
+        .eq('id', inventory_item_id)
+        .maybeSingle()
+      itemData = r.data
+      if (r.error) {
+        console.error('inventory lookup error', r.error)
+        return NextResponse.json({ error: 'inventory_lookup_error', details: String(r.error?.message || r.error) }, { status: 500 })
       }
+    } catch (e) {
+      console.error('inventory lookup exception', e)
+      return NextResponse.json({ error: 'inventory_lookup_error', details: String(e) }, { status: 500 })
     }
+
     if (!itemData) {
-      // fallback: take first active inventory item
-      const r3 = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available, is_active').eq('is_active', true).limit(1).maybeSingle()
-      itemData = r3.data; itemErr = r3.error
-    }
-    if (itemErr || !itemData) {
       // gather debug info: total count + sample rows
       let total: number | null = null
       let sample: any[] = []
@@ -83,7 +80,15 @@ export async function POST(req: Request) {
       }
 
       console.error('inventory_item_not_found', { providedInventoryItemId: inventory_item_id, providedMaterial: body?.material || null, total, sampleCount: sample.length })
-      return NextResponse.json({ error: 'inventory_item_not_found', providedInventoryItemId: inventory_item_id, providedMaterial: body?.material || null, debug: { total, sample } }, { status: 400 })
+      return NextResponse.json({ error: 'inventory_item_not_found', providedInventoryItemId: inventory_item_id, providedMaterial: body?.material || null, inventoryDebug: { total, sample, providedMaterialNorm: norm(body?.material), itemMaterialNorm: null } }, { status: 400 })
+    }
+
+    // if providedMaterial present and doesn't match item.material -> material_mismatch
+    const providedMaterialNorm = norm(body?.material)
+    const itemMaterialNorm = norm(itemData?.material)
+    if (providedMaterialNorm && itemMaterialNorm && providedMaterialNorm !== itemMaterialNorm) {
+      console.error('material_mismatch', { provided: body?.material, item: itemData?.material, providedMaterialNorm, itemMaterialNorm })
+      return NextResponse.json({ error: 'material_mismatch', providedMaterial: body?.material || null, itemMaterial: itemData?.material || null, inventoryDebug: { providedMaterialNorm, itemMaterialNorm } }, { status: 400 })
     }
 
     const { data: settingsData } = await supabaseAdmin.from('app_settings').select('*').limit(1).maybeSingle()
