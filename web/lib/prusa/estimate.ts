@@ -48,6 +48,14 @@ export async function estimate(filePath: string, opts?: { density?: number; time
       warnings.push('Failed to read STL bounds');
     }
 
+    // ensure prusa-slicer binary exists before spawning
+    try {
+      await fs.stat(bin);
+    } catch (err) {
+      const details = { reason: 'PRUSASLICER_NOT_FOUND', bin };
+      return reject(new Error('ESTIMATE_PARSE_ERROR: ' + JSON.stringify(details)));
+    }
+
     // build prusa-slicer args and include overrides via --set
     const baseArgs = ['--no-gui', '--export-gcode', '-o', outGcode, filePath];
     const cmdArgs: string[] = [...baseArgs];
