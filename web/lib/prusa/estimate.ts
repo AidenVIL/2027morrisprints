@@ -15,6 +15,37 @@ export type PrusaEstimate = {
   modelDimensionsMm?: { x: number; y: number; z: number } | null;
 };
 
+export async function getPrusaBinary(): Promise<{ bin: string; tried: string[] }> {
+  const tried: string[] = [];
+  const envPath = process.env.PRUSA_SLICER_PATH || process.env.PRUSASLICER_BIN;
+  if (envPath) {
+    tried.push(envPath);
+    try {
+      await fs.stat(envPath);
+      return { bin: envPath, tried };
+    } catch (e) {
+      // fallthrough
+    }
+  }
+
+  // try PATH
+  tried.push('prusa-slicer (PATH)');
+  try {
+    const res = spawnSync('prusa-slicer', ['--version'], { stdio: 'ignore' });
+    if (res && res.status === 0) return { bin: 'prusa-slicer', tried };
+  } catch (e) {
+    // ignore
+  }
+
+  // fallback default
+  const defaultPath = '/usr/local/bin/prusa-slicer';
+  tried.push(defaultPath);
+  const st = await fs.stat(defaultPath).then(() => true).catch(() => false);
+  if (st) return { bin: defaultPath, tried };
+
+  throw new Error('PRUSASLICER_NOT_FOUND: ' + JSON.stringify({ tried }));
+}
+
 export async function estimate(filePath: string, opts?: { density?: number; timeoutMs?: number; overrides?: Record<string, any>; debug?: boolean }): Promise<PrusaEstimate & { cmd?: string[] }> {
   const density = opts?.density ?? 1.24;
   const timeoutMs = opts?.timeoutMs ?? 120000;
@@ -51,35 +82,12 @@ export async function estimate(filePath: string, opts?: { density?: number; time
       warnings.push('Failed to read STL bounds');
     }
 
-    // Discover binary if not already set
+    // Discover binary using helper
     try {
-      if (!bin) {
-        // Try running `prusa-slicer --version` to see if it's on PATH
-        try {
-          const ok = spawnSync('prusa-slicer', ['--version'], { stdio: 'ignore' });
-          if (ok && ok.status === 0) {
-            bin = 'prusa-slicer';
-            tried.push('prusa-slicer (PATH)');
-          }
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      // If still not set, check default location
-      if (!bin) {
-        const defaultPath = '/usr/local/bin/prusa-slicer';
-        tried.push(defaultPath);
-        const st = await fs.stat(defaultPath).then(() => true).catch(() => false);
-        if (st) bin = defaultPath;
-      }
-
-      // If we still don't have a binary, return structured error listing attempted paths
-      if (!bin) {
-        return reject(new Error('PRUSASLICER_NOT_FOUND: ' + JSON.stringify({ tried })));
-      }
-    } catch (err) {
-      return reject(new Error('PRUSASLICER_NOT_FOUND: ' + JSON.stringify({ tried })));
+      const found = await getPrusaBinary();
+      bin = found.bin;
+    } catch (e) {
+      return reject(e as Error);
     }
 
     // build prusa-slicer args and include overrides via --set
