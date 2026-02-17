@@ -44,10 +44,11 @@ export async function POST(req: Request) {
       itemData = r.data; itemErr = r.error
     }
     if (!itemData) {
-      // try to match by material name sent from client
+      // try to match by material name sent from client (use wildcard, case-insensitive)
       const materialName = String(body?.material || '').trim() || null
       if (materialName) {
-        const r2 = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available, is_active').ilike('material', materialName).eq('is_active', true).limit(1).maybeSingle()
+        const pattern = `%${materialName.replace(/%/g, '')}%`
+        const r2 = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available, is_active').ilike('material', pattern).eq('is_active', true).limit(1).maybeSingle()
         itemData = r2.data; itemErr = r2.error
       }
     }
