@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '../../../../lib/supabaseClient'
-import { analyzeStl } from '../../../../lib/geometry/stl'
-import { estimateMass } from '../../../../lib/estimator/mass'
-import { estimateTime } from '../../../../lib/estimator/time'
-import { estimatePricing } from '../../../../lib/pricing/pricing'
+import { analyzeStl } from '../../../lib/geometry/stl'
+import { estimateMass } from '../../../lib/estimator/mass'
+import { estimateTime } from '../../../lib/estimator/time'
+import { estimatePricing } from '../../../lib/pricing/pricing'
 
 const PRESET_MAP: Record<string, number> = { draft: 0.28, standard: 0.2, fine: 0.16, ultra: 0.12 }
 
