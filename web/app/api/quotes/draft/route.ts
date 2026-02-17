@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '../../../../lib/supabaseClient';
-import { estimateWithPrusa } from '../../../../lib/prusaEstimator';
+import { runEstimation } from '../../../../lib/estimator/runEstimation';
 
 export async function POST(req: Request) {
   const authHeader = req.headers.get('authorization') || '';
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     if (itemError || !itemData) return NextResponse.json({ error: 'invalid inventory item' }, { status: 400 });
 
     // Run estimator server-side to ensure canonical estimate
-    const est = await estimateWithPrusa(path, settings);
+    const est = await runEstimation(path, inventory_item_id, { layerPreset: settings?.layerPreset, infillPercent: settings?.infillPercent, supports: settings?.supports });
     const grams = est.grams;
     const timeSeconds = est.timeSeconds;
 
@@ -51,8 +51,8 @@ export async function POST(req: Request) {
   } catch (e) {
     console.error('quote draft error', e);
     try {
-      const est = await estimateWithPrusa(path, settings).catch(() => null);
-      const grams = est?.grams || 0;
+      const est2 = await runEstimation(path, inventory_item_id, { layerPreset: settings?.layerPreset, infillPercent: settings?.infillPercent, supports: settings?.supports }).catch(() => null as any);
+      const grams = est2?.grams || 0;
       if (inventory_item_id && grams > 0) {
         await supabaseAdmin.rpc('release_inventory', { p_item_id: inventory_item_id, p_grams: grams, p_quote_id: quoteId });
       }
