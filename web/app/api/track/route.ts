@@ -1,14 +1,12 @@
-import { NextRequest } from 'next/server';
 import { ensureSupabaseAdmin } from '../../../lib/supabaseClient';
 
-function guessGeoFromRequest(req: NextRequest) {
+function guessGeoFromRequest(req: any) {
   // Next.js request.geo is available on some platforms (Vercel)
   // Fallback to common headers; default to Unknown
   try {
-    // @ts-ignore
     const geo = (req as any).geo;
-    const country = geo?.country || req.headers.get('x-vercel-ip-country') || req.headers.get('cf-ipcountry') || 'Unknown';
-    const city = geo?.city || req.headers.get('x-vercel-ip-city') || 'Unknown';
+    const country = geo?.country || req.headers?.get?.('x-vercel-ip-country') || req.headers?.get?.('cf-ipcountry') || 'Unknown';
+    const city = geo?.city || req.headers?.get?.('x-vercel-ip-city') || 'Unknown';
     return { country, city };
   } catch (e) {
     return { country: 'Unknown', city: 'Unknown' };
@@ -18,13 +16,13 @@ function guessGeoFromRequest(req: NextRequest) {
 export async function POST(request: Request) {
   try {
     const supabase = ensureSupabaseAdmin();
-    const req = request as NextRequest;
+    const req: any = request;
     const payload = await request.json();
     const event_type = payload?.event_type || payload?.type;
     const path = payload?.path || payload?.url || (req.nextUrl && req.nextUrl.pathname) || null;
-    const referrer = payload?.referrer || req.headers.get('referer') || null;
-    const user_agent = payload?.user_agent || req.headers.get('user-agent') || null;
-    const session_id = payload?.session_id || payload?.session || crypto.randomUUID();
+    const referrer = payload?.referrer || (req.headers && req.headers.get ? req.headers.get('referer') : null) || null;
+    const user_agent = payload?.user_agent || (req.headers && req.headers.get ? req.headers.get('user-agent') : null) || null;
+    const session_id = payload?.session_id || payload?.session || (globalThis.crypto ? (globalThis.crypto as any).randomUUID() : undefined) || '';
 
     const geo = guessGeoFromRequest(req);
 
