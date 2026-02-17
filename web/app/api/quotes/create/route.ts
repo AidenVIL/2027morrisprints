@@ -32,12 +32,14 @@ export async function POST(req: Request) {
 
     // compute price
     const materialCostPerGram = (itemData.cost_per_kg_pence || 0) / 1000;
-    const hours = timeSeconds / 3600;
-    const price = Math.round(materialCostPerGram * grams + MACHINE_HOURLY_RATE_PENCE * hours + ELECTRICITY_RATE_PENCE_PER_HOUR * hours);
+    const safeTimeSeconds = Number(timeSeconds ?? 0);
+    const hours = safeTimeSeconds / 3600;
+    const safeGrams = Number(grams ?? 0);
+    const price = Math.round(materialCostPerGram * safeGrams + MACHINE_HOURLY_RATE_PENCE * hours + ELECTRICITY_RATE_PENCE_PER_HOUR * hours);
     const finalPrice = Math.round(price * (1 + MARKUP_PERCENTAGE / 100));
 
     // reserve inventory via RPC
-    await supabaseAdmin.rpc('reserve_inventory', { p_item_id: inventory_item_id, p_grams: grams, p_quote_id: quoteId });
+    await supabaseAdmin.rpc('reserve_inventory', { p_item_id: inventory_item_id, p_grams: safeGrams, p_quote_id: quoteId });
 
     // Create PaymentIntent with manual capture
     const pi = await stripe.paymentIntents.create({
@@ -60,9 +62,9 @@ export async function POST(req: Request) {
       post_processing: {},
       quantity: settings.quantity || 1,
       inventory_item_id: inventory_item_id,
-      estimated_grams: grams,
-      estimated_print_time_seconds: timeSeconds,
-      reserved_grams: grams,
+      estimated_grams: safeGrams,
+      estimated_print_time_seconds: safeTimeSeconds,
+      reserved_grams: safeGrams,
       estimated_price_pence: finalPrice
     });
 
@@ -74,7 +76,7 @@ export async function POST(req: Request) {
       status: 'requires_capture'
     });
 
-    return NextResponse.json({ ok: true, client_secret: pi.client_secret, payment_intent_id: pi.id, estimated: { grams, timeSeconds, price: finalPrice } });
+    return NextResponse.json({ ok: true, client_secret: pi.client_secret, payment_intent_id: pi.id, estimated: { grams: safeGrams, timeSeconds: safeTimeSeconds, price: finalPrice } });
   } catch (e) {
     console.error('quote create error', e);
     // attempt to release reservation if something went wrong and quoteId/inventory provided
