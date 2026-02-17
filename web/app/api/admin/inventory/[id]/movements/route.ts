@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { ensureSupabaseAdmin } from '../../../../../lib/supabaseClient';
-import { requireAdmin } from '../../../../../lib/adminAuth';
+import { ensureSupabaseAdmin } from '../../../../../../lib/supabaseClient';
+import { requireAdmin } from '../../../../../../lib/adminAuth';
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin(req);
