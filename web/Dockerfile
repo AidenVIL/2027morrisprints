@@ -35,9 +35,23 @@ RUN set -eux; \
   chmod +x /tmp/prusaslicer.AppImage; \
   /tmp/prusaslicer.AppImage --appimage-extract; \
   mv squashfs-root /opt/prusaslicer; \
-  ln -sf /opt/prusaslicer/AppRun /usr/local/bin/prusa-slicer; \
-  chmod +x /usr/local/bin/prusa-slicer; \
-  rm -f /tmp/prusaslicer.AppImage
+  # Try multiple likely locations for the runnable produced by AppImage extraction
+  if [ -x /opt/prusaslicer/AppRun ]; then \
+    ln -sf /opt/prusaslicer/AppRun /usr/local/bin/prusa-slicer; \
+  elif [ -x /opt/prusaslicer/usr/bin/prusa-slicer ]; then \
+    ln -sf /opt/prusaslicer/usr/bin/prusa-slicer /usr/local/bin/prusa-slicer; \
+  elif [ -x /opt/prusaslicer/prusa-slicer ]; then \
+    ln -sf /opt/prusaslicer/prusa-slicer /usr/local/bin/prusa-slicer; \
+  else \
+    echo "Warning: prusa-slicer executable not found in extracted AppImage" >&2; \
+  fi; \
+  chmod +x /usr/local/bin/prusa-slicer || true; \
+  rm -f /tmp/prusaslicer.AppImage; \
+  # Export PRUSASLICER_BIN for runtime code to locate the binary
+  echo "Setting PRUSASLICER_BIN=/usr/local/bin/prusa-slicer"; \
+  export PRUSASLICER_BIN=/usr/local/bin/prusa-slicer; \
+  ls -la /opt/prusaslicer || true; \
+  ls -la /usr/local/bin/prusa-slicer || true
 
 # Verify PrusaSlicer is available (fail build if not)
 RUN which prusa-slicer
