@@ -20,7 +20,8 @@ export async function POST(req: Request) {
     const MARKUP_PERCENTAGE = Number(process.env.MARKUP_PERCENTAGE || 0)
 
     const materialCostPerGram = (itemData.cost_per_kg_pence || 0) / 1000
-    const hours = timeSeconds / 3600
+    const safeTimeSeconds = Number(timeSeconds ?? 0)
+    const hours = safeTimeSeconds / 3600
     const price = Math.round(materialCostPerGram * grams + MACHINE_HOURLY_RATE_PENCE * hours + ELECTRICITY_RATE_PENCE_PER_HOUR * hours)
     const finalPrice = Math.round(price * (1 + MARKUP_PERCENTAGE / 100))
 
