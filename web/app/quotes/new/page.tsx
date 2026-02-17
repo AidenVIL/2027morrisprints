@@ -100,7 +100,6 @@ export default function NewQuote() {
     const token = session?.data?.session?.access_token;
     const headers: any = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
-    const inventory_item_id = selectedItem || values.inventory_item_id || null;
 
     const payload = { inventory_item_id, settings: values, quantity: values.quantity, filePath: path, originalName: file.name };
     setLastRequest(payload);
