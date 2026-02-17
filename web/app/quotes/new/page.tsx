@@ -92,9 +92,25 @@ export default function NewQuote() {
     const path = `${owner}/${quoteId}/${file.name}`;
     if (!sb) { setErrorBanner({ message: 'Storage client not configured' }); console.error('Storage client not configured'); setLoading(false); return; }
 
-    // upload model
-    const { data, error } = await sb.storage.from('models').upload(path, file as File);
-    if (error) { setErrorBanner({ message: 'Upload failed' , status: 500}); setLoading(false); console.error('upload failed', error); return; }
+    // upload model via server endpoint (server will use service role key)
+    try {
+      const form = new FormData();
+      form.append('file', file as File);
+      form.append('path', path);
+      const upRes = await fetch('/api/uploads/temp', { method: 'POST', body: form });
+      const upJson = await upRes.json().catch(()=>null);
+      if (!upRes.ok || !upJson?.ok) {
+        console.error('server upload failed', upRes.status, upJson);
+        setErrorBanner({ message: 'Upload failed: ' + (upJson?.error || upJson?.message || 'unknown'), status: upRes.status });
+        setLoading(false);
+        return;
+      }
+    } catch (e) {
+      console.error('upload exception', e);
+      setErrorBanner({ message: 'Upload failed: ' + String(e) });
+      setLoading(false);
+      return;
+    }
 
     // call consolidated get-quote endpoint which runs estimation and creates UNCONFIRMED draft
     const token = session?.data?.session?.access_token;
@@ -141,8 +157,12 @@ export default function NewQuote() {
     const tempId = crypto.randomUUID()
     const tempPath = `temp/${tempId}/${f.name}`
     try{
-      const up = await sb.storage.from('models').upload(tempPath, f as File)
-      if (up.error) throw up.error
+      const form = new FormData();
+      form.append('file', f as File);
+      form.append('path', tempPath);
+      const upRes = await fetch('/api/uploads/temp', { method: 'POST', body: form });
+      const upJson = await upRes.json().catch(()=>null);
+      if (!upRes.ok || !upJson?.ok) throw new Error(upJson?.error || 'upload failed');
       const res = await fetch('/api/estimates', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: tempPath, inventory_item_id: selectedItem }) })
       const j = await res.json()
       if (!res.ok) throw new Error(j.error || 'estimate failed')
