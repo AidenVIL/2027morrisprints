@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { spawnSync } from 'child_process'
 import { getPrusaBinary } from '../../../../lib/prusa/estimate'
 
-export async function GET(_req?: Request) {
+export async function GET(_req: Request) {
   try {
     const found = await getPrusaBinary()
     const bin = found.bin
