@@ -2,7 +2,7 @@ import { supabaseAdmin } from './supabaseClient'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
-import { estimateFromStl } from './estimator'
+import { estimateFromStl } from './estimator.ts'
 
 // Downloads the model from Supabase storage and runs the pure-Node estimator.
 export async function estimateWithPrusa(storagePath: string, settings?: any) {

@@ -1,5 +1,5 @@
-export { estimateFromStl, computeStlVolumeMm3 } from '../estimator'
-export { estimateMass } from './mass'
-export { estimateTime } from './time'
+export { estimateFromStl, computeStlVolumeMm3 } from '../estimator.ts'
+export { estimateMass } from './mass.ts'
+export { estimateTime } from './time.ts'
 
 export default { estimateFromStl, computeStlVolumeMm3 }
