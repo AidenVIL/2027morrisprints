@@ -6,8 +6,8 @@ import { parseGcode, ParseResult } from './parseGcode';
 import { readStlBounds, dimsToMm } from './readStlBounds';
 
 export type PrusaEstimate = {
-  timeSeconds: number | null;
-  grams: number | null;
+  timeSeconds: number;
+  grams: number;
   filamentMm?: number | null;
   warnings?: string[];
   gcodeHeaderSnippet?: string | null;
@@ -94,9 +94,26 @@ export async function estimate(filePath: string, opts?: { density?: number; time
         if (parsed.grams !== null && parsed.grams > 20000) warnings.push('Estimated filament grams unusually large (>20kg)');
         if (parsed.timeSeconds !== null && parsed.timeSeconds > 60 * 60 * 24) warnings.push('Estimated print time exceeds 24 hours');
 
+        const maybeGrams = parsed.grams;
+        const maybeTime = parsed.timeSeconds;
+
+        const grams = Number(maybeGrams ?? NaN);
+        const timeSeconds = Number(maybeTime ?? NaN);
+
+        const debugInfo = { rawMatches: parsed.rawMatches, gcodeHeaderSnippet, usedProfileName };
+
+        if (!Number.isFinite(grams) || grams <= 0) {
+          const details = { reason: 'MISSING_OR_INVALID_GRAMS', debug: debugInfo };
+          throw new Error('ESTIMATE_PARSE_ERROR: ' + JSON.stringify(details));
+        }
+        if (!Number.isFinite(timeSeconds) || timeSeconds <= 0) {
+          const details = { reason: 'MISSING_OR_INVALID_TIME', debug: debugInfo };
+          throw new Error('ESTIMATE_PARSE_ERROR: ' + JSON.stringify(details));
+        }
+
         resolve({
-          timeSeconds: parsed.timeSeconds,
-          grams: parsed.grams,
+          timeSeconds: timeSeconds,
+          grams: grams,
           filamentMm: parsed.filamentMm,
           warnings: warnings.length ? warnings : undefined,
           gcodeHeaderSnippet,

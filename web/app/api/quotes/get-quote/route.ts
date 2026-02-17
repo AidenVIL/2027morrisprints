@@ -37,8 +37,14 @@ export async function POST(req: Request) {
       filamentDiameterMm: filamentDiameterMm || undefined,
     };
     const est = await estimateWithPrusa(path, settingsObj);
-    const grams = est.grams;
-    const timeSeconds = est.timeSeconds;
+    const grams = Number(est.grams);
+    const timeSeconds = Number(est.timeSeconds);
+
+    // validate estimator output
+    if (!Number.isFinite(grams) || grams <= 0 || !Number.isFinite(timeSeconds) || timeSeconds <= 0) {
+      const debug = { cmd: (est as any).cmd ?? null, gcodeHeaderSnippet: (est as any).gcodeHeaderSnippet ?? null, usedProfileName: (est as any).usedProfileName ?? null };
+      return NextResponse.json({ ok: false, error: 'ESTIMATE_FAILED', details: { grams: est.grams, timeSeconds: est.timeSeconds, debug } }, { status: 500 });
+    }
 
     // compute price (same logic as other endpoints)
     const { data: itemData } = await supabaseAdmin.from('inventory_items').select('*').eq('id', inventory_item_id).single();
@@ -76,6 +82,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, quoteId, estimated: { grams, timeSeconds, price: finalPrice }, debug: debugInfo });
   } catch (e) {
     console.error('get-quote error', e);
+    // If estimator threw a structured parse error, return ESTIMATE_FAILED with details
+    if (e instanceof Error && typeof e.message === 'string' && e.message.startsWith('ESTIMATE_PARSE_ERROR:')) {
+      try {
+        const json = JSON.parse(e.message.replace('ESTIMATE_PARSE_ERROR:',''));
+        return NextResponse.json({ ok: false, error: 'ESTIMATE_FAILED', details: json }, { status: 500 });
+      } catch (parseErr) {
+        // fallthrough to generic error
+      }
+    }
+
     try {
       if (inventory_item_id) {
         const est = await estimateWithPrusa(storagePath || filePath, {
@@ -86,8 +102,8 @@ export async function POST(req: Request) {
           nozzleMm: nozzleMm,
           filamentDiameterMm: filamentDiameterMm,
         }).catch(() => null);
-        const grams = est?.grams || 0;
-        if (grams > 0) await supabaseAdmin.rpc('release_inventory', { p_item_id: inventory_item_id, p_grams: grams, p_quote_id: (body as any).quoteId || null });
+        const releasedGrams = Number(est?.grams || 0);
+        if (releasedGrams > 0) await supabaseAdmin.rpc('release_inventory', { p_item_id: inventory_item_id, p_grams: releasedGrams, p_quote_id: (body as any).quoteId || null });
       }
     } catch (e2) { console.error('release failed', e2) }
     return NextResponse.json({ error: 'failed', details: String(e) }, { status: 500 });
