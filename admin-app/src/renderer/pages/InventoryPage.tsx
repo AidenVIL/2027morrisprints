@@ -13,6 +13,11 @@ import {
   Input,
   NumberInput,
   NumberInputField,
+  FormControl,
+  FormLabel,
+  InputGroup,
+  InputRightElement,
+  InputLeftElement,
   Switch,
   Badge,
   Text,
@@ -197,14 +202,35 @@ export default function InventoryPage() {
           <ModalCloseButton />
           <ModalBody>
             <Stack spacing={3}>
-              <Input placeholder="Material" value={newMaterial} onChange={(e) => setNewMaterial(e.target.value)} />
-              <Input placeholder="Colour" value={newColour} onChange={(e) => setNewColour(e.target.value)} />
-              <NumberInput value={newGrams} min={0} onChange={(v) => setNewGrams(Number(v))}>
-                <NumberInputField placeholder="Grams available" />
-              </NumberInput>
-              <NumberInput value={newCost} min={0} step={0.01} onChange={(v) => setNewCost(Number(v))}>
-                <NumberInputField placeholder="Cost per KG (£)" />
-              </NumberInput>
+              <FormControl>
+                <FormLabel>Material</FormLabel>
+                <Input placeholder="e.g. PLA" value={newMaterial} onChange={(e) => setNewMaterial(e.target.value)} />
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Colour</FormLabel>
+                <Input placeholder="e.g. White" value={newColour} onChange={(e) => setNewColour(e.target.value)} />
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Grams available (g)</FormLabel>
+                <InputGroup>
+                  <NumberInput value={newGrams} min={0} onChange={(v) => setNewGrams(Number(v))}>
+                    <NumberInputField placeholder="e.g. 1000" />
+                  </NumberInput>
+                  <InputRightElement pointerEvents="none">g</InputRightElement>
+                </InputGroup>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Cost per KG (£)</FormLabel>
+                <InputGroup>
+                  <InputLeftElement pointerEvents="none">£</InputLeftElement>
+                  <NumberInput value={newCost} min={0} step={0.01} onChange={(v) => setNewCost(Number(v))}>
+                    <NumberInputField placeholder="e.g. 15.00" />
+                  </NumberInput>
+                </InputGroup>
+              </FormControl>
             </Stack>
           </ModalBody>
           <ModalFooter>
