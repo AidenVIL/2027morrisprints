@@ -116,6 +116,20 @@ export default function QuotesPage({ onRefresh }: { onRefresh?: () => Promise<vo
     setActionLoading(false);
   }
 
+  async function doReestimate(id: string) {
+    setActionLoading(true);
+    try {
+      await adminFetch(`/api/admin/reestimate-quote`, { method: 'POST', body: JSON.stringify({ id }) });
+      toast({ status: 'success', title: 'Re-estimated' });
+      await load();
+      onClose();
+      if (onRefresh) onRefresh();
+    } catch (e: any) {
+      toast({ status: 'error', title: 'Failed', description: e?.message || String(e) });
+    }
+    setActionLoading(false);
+  }
+
   return (
     <PageContainer>
       <Heading size="md" mb={4}>Quotes</Heading>
@@ -187,6 +201,7 @@ export default function QuotesPage({ onRefresh }: { onRefresh?: () => Promise<vo
 
           <ModalFooter>
             <Button mr={3} onClick={() => { if (selected) doDeny(selected.id); }} colorScheme="red" isLoading={actionLoading}>Deny</Button>
+            <Button mr={3} onClick={() => { if (selected) doReestimate(selected.id); }} colorScheme="blue" isLoading={actionLoading}>Re-estimate</Button>
             <Button colorScheme="green" onClick={() => { if (selected) doApprove(selected.id); }} isLoading={actionLoading}>Approve</Button>
           </ModalFooter>
         </ModalContent>
