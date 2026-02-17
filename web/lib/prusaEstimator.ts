@@ -2,40 +2,44 @@ import { supabaseAdmin } from './supabaseClient'
 import fs from 'fs/promises'
 import path from 'path'
 import os from 'os'
-import { estimate } from './prusa/estimate'
+import { estimateFromStl } from './estimator'
 
-// Downloads the model from Supabase storage and runs the PrusaSlicer-based estimator.
+// Downloads the model from Supabase storage and runs the pure-Node estimator.
 export async function estimateWithPrusa(storagePath: string, settings?: any) {
   try {
     const { data, error } = await supabaseAdmin.storage.from('models').download(storagePath)
     if (error || !data) throw new Error('failed to download model for estimation')
     const arr = await data.arrayBuffer()
     const buf = Buffer.from(arr)
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'prusa-dl-'))
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'estimator-dl-'))
     const baseName = storagePath.split('/').slice(-1)[0] || 'model.stl'
     const tmpPath = path.join(tmpDir, baseName)
     await fs.writeFile(tmpPath, buf)
 
-    // map material name to filament density and a simple filament preset
-    const materialMap: Record<string, { preset: string; density: number }> = {
-      'PLA': { preset: 'PLA', density: 1.24 },
-      'PETG': { preset: 'PETG', density: 1.27 },
-      'ABS': { preset: 'ABS', density: 1.04 },
+    // map material name to filament density
+    const materialMap: Record<string, { density: number }> = {
+      'PLA': { density: 1.24 },
+      'PETG': { density: 1.27 },
+      'ABS': { density: 1.04 },
     }
-    const matName = settings?.material || '';
-    const matInfo = materialMap[matName?.toUpperCase()] || { preset: 'PLA', density: 1.24 };
+    const matName = settings?.material || ''
+    const matInfo = materialMap[matName?.toUpperCase()] || { density: 1.24 }
 
-    // build overrides mapping for PrusaSlicer --set keys
-    const overrides: Record<string, any> = {};
-    if (settings?.layerHeightMm) overrides['layer_height'] = settings.layerHeightMm;
-    if (settings?.infillPercent !== undefined) overrides['fill_density'] = settings.infillPercent;
-    if (settings?.supports !== undefined) overrides['support_material'] = settings.supports ? 1 : 0;
-    if (settings?.nozzleMm) overrides['nozzle_diameter'] = settings.nozzleMm;
-    if (settings?.filamentDiameterMm) overrides['filament_diameter'] = settings.filamentDiameterMm;
-    // also set filament preset name if available
-    overrides['filament'] = matInfo.preset;
+    const opts = {
+      density_g_cm3: matInfo.density,
+      infillPercent: settings?.infillPercent ?? undefined,
+      layerHeightMm: settings?.layerHeightMm ?? undefined,
+      extrusionWidthMm: settings?.extrusionWidthMm ?? settings?.nozzleMm ? 0.45 : undefined,
+      speedMmPerSec: settings?.speedMmPerSec ?? undefined,
+      preset: settings?.preset ?? undefined,
+      supports: settings?.supports ?? undefined,
+      calibrationFactorMaterial: settings?.calibrationFactorMaterial ?? undefined,
+      calibrationFactorTime: settings?.calibrationFactorTime ?? undefined,
+      materialCostPerGram: settings?.materialCostPerGram ?? undefined,
+      laborRatePerHour: settings?.laborRatePerHour ?? undefined,
+    }
 
-    const est = await estimate(tmpPath, { density: matInfo.density, overrides, debug: Boolean(settings?.debug) || Boolean(process.env.PRUSA_DEBUG) });
+    const est = await estimateFromStl(tmpPath, opts as any)
 
     try { await fs.rm(tmpDir, { recursive: true, force: true }) } catch (e) { /* ignore */ }
 
