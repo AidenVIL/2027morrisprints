@@ -47,9 +47,10 @@ export async function POST(req: Request) {
     const norm = (s: any) => (typeof s === 'string' ? s.trim().toLowerCase() : '')
     let itemData: any = null
     try {
+      // select all columns to avoid errors when optional columns are missing in older schemas
       const r = await supabaseAdmin
         .from('inventory_items')
-        .select('id, material, colour, density_g_per_cm3, cost_per_kg_gbp, support_multiplier, on_hand_g')
+        .select('*')
         .eq('id', inventory_item_id)
         .maybeSingle()
       itemData = r.data
@@ -83,13 +84,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'inventory_item_not_found', providedInventoryItemId: inventory_item_id, providedMaterial: body?.material || null, inventoryDebug: { total, sample, providedMaterialNorm: norm(body?.material), itemMaterialNorm: null } }, { status: 400 })
     }
 
-    // if providedMaterial present and doesn't match item.material -> material_mismatch
+    // normalise and compare material names; if mismatch return explicit error
     const providedMaterialNorm = norm(body?.material)
     const itemMaterialNorm = norm(itemData?.material)
     if (providedMaterialNorm && itemMaterialNorm && providedMaterialNorm !== itemMaterialNorm) {
       console.error('material_mismatch', { provided: body?.material, item: itemData?.material, providedMaterialNorm, itemMaterialNorm })
       return NextResponse.json({ error: 'material_mismatch', providedMaterial: body?.material || null, itemMaterial: itemData?.material || null, inventoryDebug: { providedMaterialNorm, itemMaterialNorm } }, { status: 400 })
     }
+
+    // normalize numeric material properties with fallbacks for older schemas
+    const density_g_per_cm3 = Number(itemData?.density_g_per_cm3 ?? itemData?.density_g_cm3 ?? itemData?.density ?? 1.24)
+    const cost_per_kg_gbp = Number(itemData?.cost_per_kg_gbp ?? itemData?.cost_per_kg ?? itemData?.price_per_kg ?? 0)
+    const support_multiplier = Number(itemData?.support_multiplier ?? itemData?.supportMultiplier ?? itemData?.support_factor ?? 1.18)
 
     const { data: settingsData } = await supabaseAdmin.from('app_settings').select('*').limit(1).maybeSingle()
 
