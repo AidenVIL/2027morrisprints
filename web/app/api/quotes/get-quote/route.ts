@@ -1,129 +1,110 @@
-import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '../../../../lib/supabaseClient';
-import { estimateWithPrusa } from '../../../../lib/prusaEstimator';
+import { NextResponse } from 'next/server'
+import { supabaseAdmin } from '../../../../lib/supabaseClient'
+import { analyzeStl } from '../../../../lib/geometry/stl'
+import { estimateMass } from '../../../../lib/estimator/mass'
+import { estimateTime } from '../../../../lib/estimator/time'
+import { estimatePricing } from '../../../../lib/pricing/pricing'
 
-const MACHINE_HOURLY_RATE_PENCE = Number(process.env.MACHINE_HOURLY_RATE_PENCE || 0);
-const ELECTRICITY_RATE_PENCE_PER_HOUR = Number(process.env.ELECTRICITY_RATE_PENCE_PER_HOUR || 0);
-const MARKUP_PERCENTAGE = Number(process.env.MARKUP_PERCENTAGE || 0);
+const PRESET_MAP: Record<string, number> = { draft: 0.28, standard: 0.2, fine: 0.16, ultra: 0.12 }
 
 export async function POST(req: Request) {
-  const authHeader = req.headers.get('authorization') || '';
-  if (!authHeader.startsWith('Bearer ')) return NextResponse.json({ error: 'missing token' }, { status: 401 });
-  const token = authHeader.replace('Bearer ', '');
+  const authHeader = req.headers.get('authorization') || ''
+  if (!authHeader.startsWith('Bearer ')) return NextResponse.json({ error: 'missing token' }, { status: 401 })
+  const token = authHeader.replace('Bearer ', '')
 
-  const body = await req.json();
-  const { inventory_item_id, material, layerPreset, infillPercent, supports, quantity, storagePath, filePath, originalName } = body;
+  const body = await req.json()
+  const { inventory_item_id, layerPreset, infillPercent, supports, quantity, storagePath, filePath, originalName } = body
 
-  // get user from token
-  const { data: userData } = await supabaseAdmin.auth.getUser(token as string);
-  const user = userData?.user;
-  if (!user) return NextResponse.json({ error: 'invalid token' }, { status: 401 });
+  const { data: userData } = await supabaseAdmin.auth.getUser(token as string)
+  const user = userData?.user
+  if (!user) return NextResponse.json({ error: 'invalid token' }, { status: 401 })
 
   try {
-    const path = storagePath || filePath;
-    if (!path) return NextResponse.json({ error: 'missing file path' }, { status: 400 });
+    const path = storagePath || filePath
+    if (!path) return NextResponse.json({ error: 'missing file path' }, { status: 400 })
 
-    // Ensure file exists in storage
-    const { data: fileData, error: fileErr } = await supabaseAdmin.storage.from('models').list(path.includes('/') ? path.split('/').slice(0, -1).join('/') : path);
-    // We won't treat list failure as fatal here; rely on estimator's download check
+    // download file from storage
+    const { data: downloadData, error: downloadErr } = await supabaseAdmin.storage.from('models').download(path)
+    if (downloadErr || !downloadData) return NextResponse.json({ error: 'failed to download file', details: String(downloadErr?.message || downloadErr) }, { status: 400 })
+    const arr = await downloadData.arrayBuffer()
+    const buf = Buffer.from(arr)
 
-    // Map layerPreset to numeric layer height (server-controlled)
-    const presetMap: Record<string, number> = { draft: 0.28, standard: 0.20, fine: 0.16, ultra: 0.12 };
-    const layerHeightMm = presetMap[String(layerPreset || 'standard')] || 0.20;
+    const ext = (path.split('.').slice(-1)[0] || '').toLowerCase()
+    if (ext !== 'stl') return NextResponse.json({ error: 'Only STL supported for now' }, { status: 400 })
 
-    // Run estimator (downloads file internally). Pass server-controlled settings to Prusa overrides.
-    const settingsObj = {
-      material: material || undefined,
-      layerHeightMm: layerHeightMm,
-      infillPercent: infillPercent || undefined,
-      supports: supports || undefined,
-      // Hardcode nozzle and filament diameter (do not accept from client)
-      nozzleMm: 0.4,
-      filamentDiameterMm: 1.75,
-    };
-    const est = await estimateWithPrusa(path, settingsObj);
-    const grams = Number(est.grams);
-    const timeSeconds = Number(est.timeSeconds);
+    // analyze STL geometry
+    const geom = analyzeStl(buf)
 
-    // validate estimator output
-    if (!Number.isFinite(grams) || grams <= 0 || !Number.isFinite(timeSeconds) || timeSeconds <= 0) {
-      const debug = { cmd: (est as any).cmd ?? null, gcodeHeaderSnippet: (est as any).gcodeHeaderSnippet ?? null, usedProfileName: (est as any).usedProfileName ?? null };
-      return NextResponse.json({ ok: false, error: 'ESTIMATE_FAILED', details: { grams: est.grams, timeSeconds: est.timeSeconds, debug } }, { status: 500 });
+    // fetch inventory item and app settings
+    const { data: itemData, error: itemErr } = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available').eq('id', inventory_item_id).single()
+    if (itemErr || !itemData) return NextResponse.json({ error: 'inventory_item_not_found' }, { status: 400 })
+
+    const { data: settingsData } = await supabaseAdmin.from('app_settings').select('*').limit(1).maybeSingle()
+
+    // map preset -> layerHeight
+    const layerHeightMm = PRESET_MAP[String(layerPreset || 'standard')] || 0.2
+
+    // prepare estimator inputs
+    const massSettings = {
+      layerHeightMm,
+      infillPercent: Number(infillPercent ?? 0),
+      supports: Boolean(supports),
+      density_g_per_cm3: Number(itemData.density_g_per_cm3 ?? 1.24),
+      perimeters: 3,
+      extrusionWidthMm: 0.45,
+      topBottomLayers: 5,
+      supportMultiplier: Number(itemData.support_multiplier ?? 1.18),
     }
 
-    // compute price (same logic as other endpoints)
-    const { data: itemData } = await supabaseAdmin.from('inventory_items').select('*').eq('id', inventory_item_id).single();
-    const materialCostPerGram = (itemData?.cost_per_kg_pence || 0) / 1000;
-    const hours = timeSeconds / 3600;
-    const price = Math.round(materialCostPerGram * grams + MACHINE_HOURLY_RATE_PENCE * hours + ELECTRICITY_RATE_PENCE_PER_HOUR * hours);
-    const finalPrice = Math.round(price * (1 + MARKUP_PERCENTAGE / 100));
+    const mass = estimateMass({ volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox }, massSettings)
 
-    const quoteId = crypto.randomUUID();
-    const qty = Number(quantity ?? 1);
+    const time = estimateTime({ area_mm2: geom.area_mm2, bbox: { size: { z: geom.bbox.size.z } } }, { V_print_mm3: mass.V_print_mm3, layerHeightMm, supports: Boolean(supports), preset: String(layerPreset || 'standard') as any })
+
+    const material = {
+      cost_per_kg_gbp: Number(itemData.cost_per_kg_gbp ?? 0),
+      density_g_per_cm3: Number(itemData.density_g_per_cm3 ?? 1.24),
+      support_multiplier: Number(itemData.support_multiplier ?? 1.18),
+    }
+
+    const pricingSettings = {
+      machine_rate_per_hour_gbp: Number(settingsData?.machine_rate_per_hour_gbp ?? 0.3),
+      electricity_price_per_kwh_gbp: Number(settingsData?.electricity_price_per_kwh_gbp ?? 0),
+      printer_avg_watts: Number(settingsData?.printer_avg_watts ?? 120),
+      electricity_markup: Number(settingsData?.electricity_markup ?? 1.1),
+      material_markup: Number(settingsData?.material_markup ?? 1.5),
+      labour_fee_gbp: Number(settingsData?.labour_fee_gbp ?? 1.0),
+      min_order_fee_gbp: Number(settingsData?.min_order_fee_gbp ?? 0),
+      supports_fee_gbp: Number(settingsData?.supports_fee_gbp ?? 0),
+      small_part_fee_threshold_g: Number(settingsData?.small_part_fee_threshold_g ?? 15),
+      small_part_fee_gbp: Number(settingsData?.small_part_fee_gbp ?? 0.5),
+    }
+
+    const pricing = estimatePricing(mass.grams, time.timeSeconds, material, pricingSettings)
 
     // reserve inventory
-    await supabaseAdmin.rpc('reserve_inventory', { p_item_id: inventory_item_id, p_grams: grams, p_quote_id: quoteId });
+    const quoteId = crypto.randomUUID()
+    const qty = Number(quantity ?? 1)
+    await supabaseAdmin.rpc('reserve_inventory', { p_item_id: inventory_item_id, p_grams: Math.ceil(mass.grams * qty), p_quote_id: quoteId })
 
-    // insert draft row with UNCONFIRMED
+    // insert draft row
     await supabaseAdmin.from('quote_requests').insert({
       id: quoteId,
       user_id: user.id,
       status: 'UNCONFIRMED',
       file_path: path,
       file_original_name: originalName || path.split('/').slice(-1)[0],
-      settings: settingsObj,
+      settings: massSettings,
       quantity: qty,
       inventory_item_id,
-      estimated_grams: grams,
-      estimated_print_time_seconds: timeSeconds,
-      reserved_grams: grams,
-      estimated_price_pence: finalPrice
-    });
+      estimated_grams: Math.ceil(mass.grams * qty),
+      estimated_print_time_seconds: Math.ceil(time.timeSeconds * qty),
+      reserved_grams: Math.ceil(mass.grams * qty),
+      estimated_price_pence: Math.round(pricing.final * 100),
+    })
 
-    const debugInfo: any = {};
-    if ((est as any).cmd) debugInfo.cmd = (est as any).cmd;
-    if ((est as any).gcodeHeaderSnippet) debugInfo.gcodeHeaderSnippet = (est as any).gcodeHeaderSnippet;
-    if ((est as any).usedProfileName) debugInfo.usedProfileName = (est as any).usedProfileName;
-
-    return NextResponse.json({ ok: true, quoteId, estimated: { grams, timeSeconds, price: finalPrice }, debug: debugInfo });
+    return NextResponse.json({ ok: true, grams: mass.grams, timeSeconds: time.timeSeconds, breakdown: pricing, geometry: { volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox } })
   } catch (e) {
-    console.error('get-quote error', e);
-    // If estimator threw a structured parse error, return ESTIMATE_FAILED with details
-    if (e instanceof Error && typeof e.message === 'string') {
-      if (e.message.startsWith('ESTIMATE_PARSE_ERROR:')) {
-        try {
-          const json = JSON.parse(e.message.replace('ESTIMATE_PARSE_ERROR:',''));
-          return NextResponse.json({ ok: false, error: 'ESTIMATE_FAILED', details: json }, { status: 500 });
-        } catch (parseErr) {
-          // fallthrough to generic error
-        }
-      }
-      if (e.message.startsWith('PRUSASLICER_NOT_FOUND:')) {
-        try {
-          const json = JSON.parse(e.message.replace('PRUSASLICER_NOT_FOUND:',''));
-          return NextResponse.json({ ok: false, error: 'PRUSASLICER_NOT_FOUND', details: json }, { status: 500 });
-        } catch (parseErr) {
-          // fallthrough
-        }
-      }
-    }
-
-    try {
-      if (inventory_item_id) {
-        const presetMap: Record<string, number> = { draft: 0.28, standard: 0.20, fine: 0.16, ultra: 0.12 };
-        const layerHeightMm = presetMap[String((body as any).layerPreset || 'standard')] || 0.20;
-        const est = await estimateWithPrusa(storagePath || filePath, {
-          material: material,
-          layerHeightMm: layerHeightMm,
-          infillPercent: infillPercent,
-          supports: supports,
-          nozzleMm: 0.4,
-          filamentDiameterMm: 1.75,
-        }).catch(() => null);
-        const releasedGrams = Number(est?.grams || 0);
-        if (releasedGrams > 0) await supabaseAdmin.rpc('release_inventory', { p_item_id: inventory_item_id, p_grams: releasedGrams, p_quote_id: (body as any).quoteId || null });
-      }
-    } catch (e2) { console.error('release failed', e2) }
-    return NextResponse.json({ error: 'failed', details: String(e) }, { status: 500 });
+    console.error('get-quote error', e)
+    return NextResponse.json({ ok: false, error: 'failed', details: String(e) }, { status: 500 })
   }
 }
