@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     if (itemError || !itemData) return NextResponse.json({ error: 'invalid inventory item' }, { status: 400 });
 
     // Run estimator (server-side)
-    const est = await estimateWithPrusa(path, settings.materialProfile);
+    const est = await estimateWithPrusa(path, settings);
     const grams = est.grams;
     const timeSeconds = est.timeSeconds;
 
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
     // attempt to release reservation if something went wrong and quoteId/inventory provided
     try {
       const { inventory_item_id } = body as any;
-      const est = await estimateWithPrusa(path, (body as any).settings?.materialProfile).catch(() => null);
+      const est = await estimateWithPrusa(path, (body as any).settings).catch(() => null);
       const grams = est?.grams || 0;
       if (inventory_item_id && grams > 0) {
         await supabaseAdmin.rpc('release_inventory', { p_item_id: inventory_item_id, p_grams: grams, p_quote_id: quoteId });

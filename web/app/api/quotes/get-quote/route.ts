@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const token = authHeader.replace('Bearer ', '');
 
   const body = await req.json();
-  const { inventory_item_id, settings, quantity, storagePath, filePath, originalName } = body;
+  const { inventory_item_id, material, layerHeightMm, infillPercent, supports, quantity, storagePath, filePath, originalName, nozzleMm, filamentDiameterMm } = body;
 
   // get user from token
   const { data: userData } = await supabaseAdmin.auth.getUser(token as string);
@@ -27,8 +27,16 @@ export async function POST(req: Request) {
     const { data: fileData, error: fileErr } = await supabaseAdmin.storage.from('models').list(path.includes('/') ? path.split('/').slice(0, -1).join('/') : path);
     // We won't treat list failure as fatal here; rely on estimator's download check
 
-    // Run estimator (downloads file internally)
-    const est = await estimateWithPrusa(path, settings?.materialProfile);
+    // Run estimator (downloads file internally). Pass user settings to Prusa overrides.
+    const settingsObj = {
+      material: material || undefined,
+      layerHeightMm: layerHeightMm || undefined,
+      infillPercent: infillPercent || undefined,
+      supports: supports || undefined,
+      nozzleMm: nozzleMm || undefined,
+      filamentDiameterMm: filamentDiameterMm || undefined,
+    };
+    const est = await estimateWithPrusa(path, settingsObj);
     const grams = est.grams;
     const timeSeconds = est.timeSeconds;
 
@@ -51,8 +59,8 @@ export async function POST(req: Request) {
       status: 'UNCONFIRMED',
       file_path: path,
       file_original_name: originalName || path.split('/').slice(-1)[0],
-      settings: settings,
-      quantity: quantity || settings?.quantity || 1,
+      settings: settingsObj,
+      quantity: quantity || settingsObj?.quantity || 1,
       inventory_item_id,
       estimated_grams: grams,
       estimated_print_time_seconds: timeSeconds,
@@ -60,12 +68,24 @@ export async function POST(req: Request) {
       estimated_price_pence: finalPrice
     });
 
-    return NextResponse.json({ ok: true, quoteId, estimated: { grams, timeSeconds, price: finalPrice } });
+    const debugInfo: any = {};
+    if ((est as any).cmd) debugInfo.cmd = (est as any).cmd;
+    if ((est as any).gcodeHeaderSnippet) debugInfo.gcodeHeaderSnippet = (est as any).gcodeHeaderSnippet;
+    if ((est as any).usedProfileName) debugInfo.usedProfileName = (est as any).usedProfileName;
+
+    return NextResponse.json({ ok: true, quoteId, estimated: { grams, timeSeconds, price: finalPrice }, debug: debugInfo });
   } catch (e) {
     console.error('get-quote error', e);
     try {
       if (inventory_item_id) {
-        const est = await estimateWithPrusa(storagePath || filePath, settings?.materialProfile).catch(() => null);
+        const est = await estimateWithPrusa(storagePath || filePath, {
+          material: material,
+          layerHeightMm: layerHeightMm,
+          infillPercent: infillPercent,
+          supports: supports,
+          nozzleMm: nozzleMm,
+          filamentDiameterMm: filamentDiameterMm,
+        }).catch(() => null);
         const grams = est?.grams || 0;
         if (grams > 0) await supabaseAdmin.rpc('release_inventory', { p_item_id: inventory_item_id, p_grams: grams, p_quote_id: (body as any).quoteId || null });
       }

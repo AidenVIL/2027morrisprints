@@ -117,7 +117,20 @@ export default function NewQuote() {
     const headers: any = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const payload = { inventory_item_id, settings: values, quantity: values.quantity, filePath: path, originalName: file.name };
+    // derive material name from selected inventory item (no color)
+    const inv = materials.find((m: any) => m.id === inventory_item_id) as any | undefined;
+    const materialName = inv?.material || (values?.material || null);
+
+    const settingsPayload = {
+      material: materialName,
+      layerHeightMm: Number(values.layerHeightMm ?? values.layer_height ?? 0.2),
+      infillPercent: Number(values.infill ?? 0),
+      supports: Boolean(values.supports),
+      nozzleMm: Number(values.nozzleMm ?? 0.4),
+      filamentDiameterMm: Number(values.filamentDiameterMm ?? 1.75),
+    };
+
+    const payload = { inventory_item_id, material: materialName, layerHeightMm: settingsPayload.layerHeightMm, infillPercent: settingsPayload.infillPercent, supports: settingsPayload.supports, quantity: Number(values.quantity || 1), nozzleMm: settingsPayload.nozzleMm, filamentDiameterMm: settingsPayload.filamentDiameterMm, filePath: path, originalName: file.name };
     setLastRequest(payload);
     let gqRes: Response | null = null;
     let gqJson: any = null;
@@ -205,7 +218,14 @@ export default function NewQuote() {
           ))}
         </select>
         {/* colour removed — inventory items pair material+colour together */}
+        <input type="number" placeholder="Layer height (mm)" {...register('layerHeightMm' as any)} className="border p-2 rounded w-full" step="0.01" />
         <input type="number" placeholder="Infill %" {...register('infill' as any)} className="border p-2 rounded w-full" />
+        <label className="flex items-center gap-2">
+          <input type="checkbox" {...register('supports' as any)} />
+          <span>Supports</span>
+        </label>
+        <input type="number" placeholder="Nozzle diameter (mm) - optional" {...register('nozzleMm' as any)} className="border p-2 rounded w-full" step="0.01" />
+        <input type="number" placeholder="Filament diameter (mm) - optional" {...register('filamentDiameterMm' as any)} className="border p-2 rounded w-full" step="0.01" defaultValue={1.75} />
         <input type="number" placeholder="Quantity" {...register('quantity' as any)} className="border p-2 rounded w-full" defaultValue={1} />
         <select {...register('turnaround' as any)} className="border p-2 rounded">
           <option value="standard">Standard</option>
