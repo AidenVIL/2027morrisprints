@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { supabase } from '../../../lib/supabaseBrowser';
 import AuthCard from '../../../components/AuthCard';
 import ModelDropzone from '../../../components/ModelDropzone';
+import { useRouter } from 'next/navigation';
 
 const schema = z.object({
   file: z.instanceof(File),
@@ -33,6 +34,10 @@ export default function NewQuote() {
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [estimate, setEstimate] = useState<{grams:number,timeSeconds:number,price:number}|null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [errorBanner, setErrorBanner] = useState<{title?:string,message:string,status?:number}|null>(null);
+  const [lastRequest, setLastRequest] = useState<any>(null);
+  const [lastResponse, setLastResponse] = useState<any>(null);
+  const router = useRouter();
 
   useEffect(() => {
     // restore draft if present (optional for UX)
@@ -54,6 +59,9 @@ export default function NewQuote() {
 
   // New flow: create an UNCONFIRMED draft and add to cart after server estimate.
   async function getQuote(values: any) {
+    setErrorBanner(null);
+    setLastRequest(null);
+    setLastResponse(null);
     setLoading(true);
     // check session
     const session = await sb?.auth.getSession();
@@ -71,15 +79,22 @@ export default function NewQuote() {
 
     const quoteId = crypto.randomUUID();
     const file = selectedFile || (values.file ? values.file[0] : null);
-    if (!file) { alert('No file selected'); setLoading(false); return; }
+    // client-side validations
+    if (!file) { setErrorBanner({ message: 'No file selected' }); setLoading(false); console.error('Get quote: missing file', { values, selectedFile }); return; }
+    const inventory_item_id = selectedItem || values.inventory_item_id || null;
+    if (!inventory_item_id) { setErrorBanner({ message: 'Please select a material' }); setLoading(false); console.error('Get quote: missing inventory item', { values, selectedItem }); return; }
+    const infill = Number(values.infill);
+    const qty = Number(values.quantity || 1);
+    if (isNaN(infill) || infill < 0 || infill > 100) { setErrorBanner({ message: 'Infill must be 0–100' }); setLoading(false); console.error('Get quote: invalid infill', { values }); return; }
+    if (isNaN(qty) || qty < 1) { setErrorBanner({ message: 'Quantity must be >= 1' }); setLoading(false); console.error('Get quote: invalid quantity', { values }); return; }
 
     const owner = user?.id || 'guest';
     const path = `${owner}/${quoteId}/${file.name}`;
-    if (!sb) { alert('Storage client not configured'); setLoading(false); return; }
+    if (!sb) { setErrorBanner({ message: 'Storage client not configured' }); console.error('Storage client not configured'); setLoading(false); return; }
 
     // upload model
     const { data, error } = await sb.storage.from('models').upload(path, file as File);
-    if (error) { alert('upload failed'); setLoading(false); return; }
+    if (error) { setErrorBanner({ message: 'Upload failed' , status: 500}); setLoading(false); console.error('upload failed', error); return; }
 
     // call consolidated get-quote endpoint which runs estimation and creates UNCONFIRMED draft
     const token = session?.data?.session?.access_token;
@@ -87,14 +102,33 @@ export default function NewQuote() {
     if (token) headers.Authorization = `Bearer ${token}`;
     const inventory_item_id = selectedItem || values.inventory_item_id || null;
 
-    const gqRes = await fetch('/api/quotes/get-quote', { method: 'POST', headers, body: JSON.stringify({ inventory_item_id, settings: values, quantity: values.quantity, filePath: path, originalName: file.name }) });
-    const gqJson = await gqRes.json();
-    if (!gqRes.ok) { alert('Get quote failed: ' + (gqJson?.error || gqJson?.details || 'unknown')); setLoading(false); return; }
+    const payload = { inventory_item_id, settings: values, quantity: values.quantity, filePath: path, originalName: file.name };
+    setLastRequest(payload);
+    let gqRes: Response | null = null;
+    let gqJson: any = null;
+    try {
+      gqRes = await fetch('/api/quotes/get-quote', { method: 'POST', headers, body: JSON.stringify(payload) });
+      gqJson = await gqRes.json().catch(()=>null);
+      setLastResponse({ status: gqRes.status, body: gqJson });
+    } catch (e) {
+      console.error('get-quote network error', e);
+      setErrorBanner({ message: 'Network error while requesting quote' });
+      setLoading(false);
+      setLastResponse({ error: String(e) });
+      return;
+    }
+    if (!gqRes || !gqRes.ok) {
+      console.error('get-quote failed', gqRes?.status, gqJson);
+      setErrorBanner({ message: 'Get quote failed: ' + (gqJson?.error || gqJson?.details || 'unknown'), status: gqRes?.status });
+      setLoading(false);
+      return;
+    }
 
-    // show estimate summary and let user go to cart
+    // show estimate summary and navigate to cart
     setEstimate({ grams: gqJson.estimated.grams, timeSeconds: gqJson.estimated.timeSeconds, price: gqJson.estimated.price || gqJson.estimated.price_pence || gqJson.estimated.price });
     setLoading(false);
-    // keep user on page and show cart link
+    // navigate to cart after short delay so estimate card is visible
+    setTimeout(()=>router.push('/cart'), 700);
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>){
@@ -104,7 +138,7 @@ export default function NewQuote() {
   }
 
   async function doEstimateForFile(f: File) {
-    if (!selectedItem) return alert('Select a material first to estimate')
+    if (!selectedItem) { setErrorBanner({ message: 'Select a material first to estimate' }); return; }
     const tempId = crypto.randomUUID()
     const tempPath = `temp/${tempId}/${f.name}`
     try{
@@ -114,7 +148,7 @@ export default function NewQuote() {
       const j = await res.json()
       if (!res.ok) throw new Error(j.error || 'estimate failed')
       setEstimate({ grams: j.grams, timeSeconds: j.timeSeconds, price: j.price })
-    }catch(err){ console.error('estimate', err); alert('Estimate failed: '+String(err)) }
+    }catch(err){ console.error('estimate', err); setErrorBanner({ message: 'Estimate failed: '+String(err) }); }
   }
 
   // Called after successful auth to continue submission
@@ -129,7 +163,7 @@ export default function NewQuote() {
       if (values?.inventory_item_id) setSelectedItem(values.inventory_item_id)
       setShowAuth(false);
       // small delay to allow modal to close
-      setTimeout(() => handleSubmit(getQuote)(values), 200);
+      setTimeout(() => getQuote(values), 200);
     } catch (e) {
       console.error('failed restoring draft', e);
     }
@@ -138,7 +172,7 @@ export default function NewQuote() {
   return (
     <div className="max-w-2xl mx-auto p-6">
       <h2 className="text-xl font-semibold mb-4">New Quote</h2>
-      <form onSubmit={(e)=>{ e.preventDefault(); handleSubmit(getQuote)(); }} className="space-y-4">
+      <form onSubmit={handleSubmit(getQuote)} className="space-y-4">
         {/* Model uploader */}
         <ModelDropzone
           onFileChange={(f)=>setSelectedFile(f)}
@@ -159,7 +193,25 @@ export default function NewQuote() {
           <option value="fast">Fast</option>
         </select>
         <textarea placeholder="Notes" {...register('notes' as any)} className="border p-2 rounded w-full" />
-        <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded" disabled={loading}>{loading? 'Working...' : 'Get Quote'}</button>
+        <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded" disabled={loading}>
+          {loading ? 'Working...' : 'Get Quote'}
+        </button>
+        {errorBanner && (
+          <div className="mt-2 p-3 bg-red-50 border border-red-200 text-red-800 rounded">
+            <div className="font-semibold">Error{errorBanner.status ? ` (status ${errorBanner.status})` : ''}</div>
+            <div>{errorBanner.message}</div>
+          </div>
+        )}
+        {/* Debug panel */}
+        <details className="mt-2 text-sm text-gray-600">
+          <summary className="cursor-pointer">Debug: last request/response</summary>
+          <div className="mt-2">
+            <div className="font-semibold">Last Request</div>
+            <pre className="text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto">{JSON.stringify(lastRequest, null, 2)}</pre>
+            <div className="font-semibold mt-2">Last Response</div>
+            <pre className="text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto">{JSON.stringify(lastResponse, null, 2)}</pre>
+          </div>
+        </details>
         {estimate && (
           <div className="mt-3 p-3 border rounded bg-gray-50">
             <div>Estimated filament: <strong>{estimate.grams} g</strong></div>

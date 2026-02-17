@@ -22,7 +22,8 @@ WORKDIR /usr/src/app
 ENV PRUSASLICER_VERSION=2.6.0
 RUN wget -q -O /tmp/prusaslicer.AppImage "https://github.com/prusa3d/PrusaSlicer/releases/download/version/PrusaSlicer-${PRUSASLICER_VERSION}+linux64-Glibc2.31.AppImage" || true
 RUN if [ -f /tmp/prusaslicer.AppImage ]; then chmod +x /tmp/prusaslicer.AppImage && /tmp/prusaslicer.AppImage --appimage-extract && mv squashfs-root /opt/prusaslicer && ln -s /opt/prusaslicer/AppRun /usr/local/bin/prusa-slicer; else echo "PrusaSlicer AppImage not downloaded"; fi
-
+# Verify PrusaSlicer is available (fail build if not)
+RUN prusa-slicer --version
 # Copy source
 COPY package*.json ./
 RUN npm ci --production=false
