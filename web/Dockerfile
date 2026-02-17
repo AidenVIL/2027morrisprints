@@ -52,12 +52,16 @@ RUN set -eux; \
   tar -xJf /tmp/prusaslicer.tar.xz -C /opt/prusaslicer || (echo "tar extraction failed" >&2; ls -la /tmp || true; exit 1); \
   echo "Listing extracted files (top-level)"; ls -la /opt/prusaslicer || true; \
   echo "Listing extracted files (one level down)"; ls -la /opt/prusaslicer/* || true; \
-  # Locate prusa-slicer binary
-  BIN=$(find /opt/prusaslicer -type f -name 'prusa-slicer' -perm /111 | head -n1 || true); \
+  # Locate prusa-slicer binary (case-insensitive) or AppRun wrappers
+  BIN=$(find /opt/prusaslicer -type f \( -iname 'prusa-slicer' -o -iname 'PrusaSlicer' -o -iname 'AppRun' \) -perm /111 | head -n1 || true); \
+  # Also try common usr/bin locations if not found above
+  if [ -z "$BIN" ]; then \
+    BIN=$(find /opt/prusaslicer -type f -path '*/usr/bin/*prusa*' -perm /111 | head -n1 || true); \
+  fi; \
   if [ -n "$BIN" ]; then \
     echo "Found binary: $BIN"; cp "$BIN" /usr/local/bin/prusa-slicer; \
   else \
-    echo "prusa-slicer binary not found in extracted archive" >&2; ls -R /opt/prusaslicer || true; exit 1; \
+    echo "prusa-slicer executable not found in extracted archive" >&2; ls -R /opt/prusaslicer || true; exit 1; \
   fi; \
   chmod +x /usr/local/bin/prusa-slicer; rm -f /tmp/prusaslicer.tar.xz || true
 
