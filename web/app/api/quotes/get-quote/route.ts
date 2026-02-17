@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const token = authHeader.replace('Bearer ', '');
 
   const body = await req.json();
-  const { inventory_item_id, material, layerHeightMm, infillPercent, supports, quantity, storagePath, filePath, originalName, nozzleMm, filamentDiameterMm } = body;
+  const { inventory_item_id, material, layerPreset, infillPercent, supports, quantity, storagePath, filePath, originalName } = body;
 
   // get user from token
   const { data: userData } = await supabaseAdmin.auth.getUser(token as string);
@@ -27,14 +27,19 @@ export async function POST(req: Request) {
     const { data: fileData, error: fileErr } = await supabaseAdmin.storage.from('models').list(path.includes('/') ? path.split('/').slice(0, -1).join('/') : path);
     // We won't treat list failure as fatal here; rely on estimator's download check
 
-    // Run estimator (downloads file internally). Pass user settings to Prusa overrides.
+    // Map layerPreset to numeric layer height (server-controlled)
+    const presetMap: Record<string, number> = { draft: 0.28, standard: 0.20, fine: 0.16, ultra: 0.12 };
+    const layerHeightMm = presetMap[String(layerPreset || 'standard')] || 0.20;
+
+    // Run estimator (downloads file internally). Pass server-controlled settings to Prusa overrides.
     const settingsObj = {
       material: material || undefined,
-      layerHeightMm: layerHeightMm || undefined,
+      layerHeightMm: layerHeightMm,
       infillPercent: infillPercent || undefined,
       supports: supports || undefined,
-      nozzleMm: nozzleMm || undefined,
-      filamentDiameterMm: filamentDiameterMm || undefined,
+      // Hardcode nozzle and filament diameter (do not accept from client)
+      nozzleMm: 0.4,
+      filamentDiameterMm: 1.75,
     };
     const est = await estimateWithPrusa(path, settingsObj);
     const grams = Number(est.grams);
@@ -95,13 +100,15 @@ export async function POST(req: Request) {
 
     try {
       if (inventory_item_id) {
+        const presetMap: Record<string, number> = { draft: 0.28, standard: 0.20, fine: 0.16, ultra: 0.12 };
+        const layerHeightMm = presetMap[String((body as any).layerPreset || 'standard')] || 0.20;
         const est = await estimateWithPrusa(storagePath || filePath, {
           material: material,
           layerHeightMm: layerHeightMm,
           infillPercent: infillPercent,
           supports: supports,
-          nozzleMm: nozzleMm,
-          filamentDiameterMm: filamentDiameterMm,
+          nozzleMm: 0.4,
+          filamentDiameterMm: 1.75,
         }).catch(() => null);
         const releasedGrams = Number(est?.grams || 0);
         if (releasedGrams > 0) await supabaseAdmin.rpc('release_inventory', { p_item_id: inventory_item_id, p_grams: releasedGrams, p_quote_id: (body as any).quoteId || null });

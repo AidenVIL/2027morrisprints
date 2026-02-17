@@ -9,9 +9,9 @@ import ModelDropzone from '../../../components/ModelDropzone';
 import { useRouter } from 'next/navigation';
 
 const schema = z.object({
-  file: z.instanceof(File),
+  // file is uploaded immediately; the form holds other settings
   inventory_item_id: z.string().optional(),
-  layer_height: z.string(),
+  layerPreset: z.enum(['draft','standard','fine','ultra']),
   infill: z.number().min(0).max(100),
   walls: z.number().min(0),
   supports: z.boolean(),
@@ -34,6 +34,8 @@ export default function NewQuote() {
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
   const [estimate, setEstimate] = useState<{grams:number,timeSeconds:number,price:number}|null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [storagePath, setStoragePath] = useState<string | null>(null);
+  const [originalName, setOriginalName] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<{title?:string,message:string,status?:number}|null>(null);
   const [lastRequest, setLastRequest] = useState<any>(null);
   const [lastResponse, setLastResponse] = useState<any>(null);
@@ -78,39 +80,15 @@ export default function NewQuote() {
     }
 
     const quoteId = crypto.randomUUID();
-    const file = selectedFile || (values.file ? values.file[0] : null);
+    const path = storagePath || null;
     // client-side validations
-    if (!file) { setErrorBanner({ message: 'No file selected' }); setLoading(false); console.error('Get quote: missing file', { values, selectedFile }); return; }
+    if (!path) { setErrorBanner({ message: 'No file uploaded' }); setLoading(false); console.error('Get quote: missing storagePath', { values, storagePath }); return; }
     const inventory_item_id = selectedItem || values.inventory_item_id || null;
     if (!inventory_item_id) { setErrorBanner({ message: 'Please select a material' }); setLoading(false); console.error('Get quote: missing inventory item', { values, selectedItem }); return; }
     const infill = Number(values.infill);
     const qty = Number(values.quantity || 1);
     if (isNaN(infill) || infill < 0 || infill > 100) { setErrorBanner({ message: 'Infill must be 0–100' }); setLoading(false); console.error('Get quote: invalid infill', { values }); return; }
     if (isNaN(qty) || qty < 1) { setErrorBanner({ message: 'Quantity must be >= 1' }); setLoading(false); console.error('Get quote: invalid quantity', { values }); return; }
-
-    const owner = user?.id || 'guest';
-    const path = `${owner}/${quoteId}/${file.name}`;
-    if (!sb) { setErrorBanner({ message: 'Storage client not configured' }); console.error('Storage client not configured'); setLoading(false); return; }
-
-    // upload model via server endpoint (server will use service role key)
-    try {
-      const form = new FormData();
-      form.append('file', file as File);
-      form.append('path', path);
-      const upRes = await fetch('/api/uploads/temp', { method: 'POST', body: form });
-      const upJson = await upRes.json().catch(()=>null);
-      if (!upRes.ok || !upJson?.ok) {
-        console.error('server upload failed', upRes.status, upJson);
-        setErrorBanner({ message: 'Upload failed: ' + (upJson?.error || upJson?.message || 'unknown'), status: upRes.status });
-        setLoading(false);
-        return;
-      }
-    } catch (e) {
-      console.error('upload exception', e);
-      setErrorBanner({ message: 'Upload failed: ' + String(e) });
-      setLoading(false);
-      return;
-    }
 
     // call consolidated get-quote endpoint which runs estimation and creates UNCONFIRMED draft
     const token = session?.data?.session?.access_token;
@@ -121,16 +99,16 @@ export default function NewQuote() {
     const inv = materials.find((m: any) => m.id === inventory_item_id) as any | undefined;
     const materialName = inv?.material || (values?.material || null);
 
-    const settingsPayload = {
+    const payload = {
+      inventory_item_id,
       material: materialName,
-      layerHeightMm: Number(values.layerHeightMm ?? values.layer_height ?? 0.2),
+      layerPreset: values.layerPreset || 'standard',
       infillPercent: Number(values.infill ?? 0),
       supports: Boolean(values.supports),
-      nozzleMm: Number(values.nozzleMm ?? 0.4),
-      filamentDiameterMm: Number(values.filamentDiameterMm ?? 1.75),
+      quantity: Number(values.quantity || 1),
+      storagePath: path,
+      originalName: originalName || path.split('/').slice(-1)[0]
     };
-
-    const payload = { inventory_item_id, material: materialName, layerHeightMm: settingsPayload.layerHeightMm, infillPercent: settingsPayload.infillPercent, supports: settingsPayload.supports, quantity: Number(values.quantity || 1), nozzleMm: settingsPayload.nozzleMm, filamentDiameterMm: settingsPayload.filamentDiameterMm, filePath: path, originalName: file.name };
     setLastRequest(payload);
     let gqRes: Response | null = null;
     let gqJson: any = null;
@@ -159,28 +137,36 @@ export default function NewQuote() {
     setTimeout(()=>router.push('/cart'), 700);
   }
 
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>){
-    const f = e.target.files?.[0]
-    if (!f) return
-    await doEstimateForFile(f)
-  }
-
-  async function doEstimateForFile(f: File) {
-    if (!selectedItem) { setErrorBanner({ message: 'Select a material first to estimate' }); return; }
-    const tempId = crypto.randomUUID()
-    const tempPath = `temp/${tempId}/${f.name}`
-    try{
+  // upload-only handler called by ModelDropzone. Uploads to server and stores returned path.
+  async function handleFileUpload(f: File, setProgress: (n:number)=>void) {
+    setErrorBanner(null);
+    setLastRequest(null);
+    setLastResponse(null);
+    setLoading(true);
+    try {
+      const tempId = crypto.randomUUID();
+      const owner = (await sb?.auth.getSession())?.data?.session?.user?.id || 'guest';
+      const path = `${owner}/uploads/${tempId}/${f.name}`;
       const form = new FormData();
       form.append('file', f as File);
-      form.append('path', tempPath);
+      form.append('path', path);
       const upRes = await fetch('/api/uploads/temp', { method: 'POST', body: form });
       const upJson = await upRes.json().catch(()=>null);
-      if (!upRes.ok || !upJson?.ok) throw new Error(upJson?.error || 'upload failed');
-      const res = await fetch('/api/estimates', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ path: tempPath, inventory_item_id: selectedItem }) })
-      const j = await res.json()
-      if (!res.ok) throw new Error(j.error || 'estimate failed')
-      setEstimate({ grams: j.grams, timeSeconds: j.timeSeconds, price: j.price })
-    }catch(err){ console.error('estimate', err); setErrorBanner({ message: 'Estimate failed: '+String(err) }); }
+      if (!upRes.ok || !upJson?.ok) {
+        console.error('server upload failed', upRes.status, upJson);
+        setErrorBanner({ message: 'Upload failed: ' + (upJson?.error || upJson?.message || 'unknown'), status: upRes.status });
+        setLoading(false);
+        return;
+      }
+      setStoragePath(upJson.path || upJson.path);
+      setOriginalName(f.name);
+      setSelectedFile(f);
+    } catch (e) {
+      console.error('upload exception', e);
+      setErrorBanner({ message: 'Upload failed: ' + String(e) });
+    } finally {
+      setLoading(false);
+    }
   }
 
   // Called after successful auth to continue submission
@@ -208,7 +194,7 @@ export default function NewQuote() {
         {/* Model uploader */}
         <ModelDropzone
           onFileChange={(f)=>setSelectedFile(f)}
-          onUpload={async (f, setP) => { await doEstimateForFile(f); }}
+          onUpload={async (f, setP) => { await handleFileUpload(f, setP); }}
         />
 
         <select value={selectedItem || ''} onChange={(e)=>{ setSelectedItem(e.target.value); }} className="border p-2 rounded">
@@ -218,14 +204,35 @@ export default function NewQuote() {
           ))}
         </select>
         {/* colour removed — inventory items pair material+colour together */}
-        <input type="number" placeholder="Layer height (mm)" {...register('layerHeightMm' as any)} className="border p-2 rounded w-full" step="0.01" />
+        {/* Layer height presets */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+          <label className="border p-3 rounded cursor-pointer">
+            <input type="radio" value="draft" {...register('layerPreset' as any)} className="mr-2" />
+            <div className="font-semibold">Draft (0.28 mm)</div>
+            <div className="text-xs text-gray-500">Fast, lower detail — ~0.7x time</div>
+          </label>
+          <label className="border p-3 rounded cursor-pointer">
+            <input type="radio" value="standard" {...register('layerPreset' as any)} className="mr-2" defaultChecked />
+            <div className="font-semibold">Standard (0.20 mm)</div>
+            <div className="text-xs text-gray-500">Balanced — 1.0x time</div>
+          </label>
+          <label className="border p-3 rounded cursor-pointer">
+            <input type="radio" value="fine" {...register('layerPreset' as any)} className="mr-2" />
+            <div className="font-semibold">Fine (0.16 mm)</div>
+            <div className="text-xs text-gray-500">Higher detail — ~1.3x time</div>
+          </label>
+          <label className="border p-3 rounded cursor-pointer">
+            <input type="radio" value="ultra" {...register('layerPreset' as any)} className="mr-2" />
+            <div className="font-semibold">Ultra (0.12 mm)</div>
+            <div className="text-xs text-gray-500">Best detail — ~1.7x time</div>
+          </label>
+        </div>
         <input type="number" placeholder="Infill %" {...register('infill' as any)} className="border p-2 rounded w-full" />
         <label className="flex items-center gap-2">
           <input type="checkbox" {...register('supports' as any)} />
           <span>Supports</span>
         </label>
-        <input type="number" placeholder="Nozzle diameter (mm) - optional" {...register('nozzleMm' as any)} className="border p-2 rounded w-full" step="0.01" />
-        <input type="number" placeholder="Filament diameter (mm) - optional" {...register('filamentDiameterMm' as any)} className="border p-2 rounded w-full" step="0.01" defaultValue={1.75} />
+        {/* nozzle and filament diameter removed from UI (hardcoded server-side) */}
         <input type="number" placeholder="Quantity" {...register('quantity' as any)} className="border p-2 rounded w-full" defaultValue={1} />
         <select {...register('turnaround' as any)} className="border p-2 rounded">
           <option value="standard">Standard</option>
