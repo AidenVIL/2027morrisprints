@@ -27,7 +27,7 @@ const schema = z.object({
 
 export default function NewQuote() {
   const sb = supabase;
-  const { register, handleSubmit } = useForm({ resolver: zodResolver(schema as any) });
+  const { register, handleSubmit, formState: { errors } } = useForm({ resolver: zodResolver(schema as any), defaultValues: { layerPreset: 'standard', infill: 20, quantity: 1, supports: false } });
   const [loading, setLoading] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [materials, setMaterials] = useState<any[]>([])
@@ -227,13 +227,15 @@ export default function NewQuote() {
             <div className="text-xs text-gray-500">Best detail — ~1.7x time</div>
           </label>
         </div>
-        <input type="number" placeholder="Infill %" {...register('infill' as any)} className="border p-2 rounded w-full" />
+        <input type="number" placeholder="Infill %" {...register('infill' as any, { valueAsNumber: true })} className="border p-2 rounded w-full" />
+        {errors.infill && <div className="text-sm text-red-600">Infill is required (0–100)</div>}
         <label className="flex items-center gap-2">
           <input type="checkbox" {...register('supports' as any)} />
           <span>Supports</span>
         </label>
         {/* nozzle and filament diameter removed from UI (hardcoded server-side) */}
-        <input type="number" placeholder="Quantity" {...register('quantity' as any)} className="border p-2 rounded w-full" defaultValue={1} />
+        <input type="number" placeholder="Quantity" {...register('quantity' as any, { valueAsNumber: true })} className="border p-2 rounded w-full" defaultValue={1} />
+        {errors.quantity && <div className="text-sm text-red-600">Quantity must be 1 or more</div>}
         <select {...register('turnaround' as any)} className="border p-2 rounded">
           <option value="standard">Standard</option>
           <option value="fast">Fast</option>
