@@ -36,51 +36,30 @@ WORKDIR /usr/src/app
 # Try a few common asset naming patterns and both tag formats (with and without leading 'v').
 RUN set -eux; \
   mkdir -p /opt/prusaslicer; \
-  for TAG in "$PRUSA_VERSION" "v$PRUSA_VERSION"; do \
-    for ASSET in \
-      "PrusaSlicer-${TAG}-Linux-x86_64-gtk3.tar.xz" \
-      "PrusaSlicer-${TAG}-Linux-x86_64.tar.xz" \
-      "PrusaSlicer-${TAG}-linux-x86_64.tar.xz" \
-      "PrusaSlicer-${TAG}-linux-x86_64-GTK3.tar.xz" \
-      "PrusaSlicer-${TAG}.AppImage" \
-      "PrusaSlicer-${TAG}-linux-x86_64.AppImage"; do \
-      URL="https://github.com/prusa3d/PrusaSlicer/releases/download/${TAG}/${ASSET}"; \
-      echo "Trying $URL"; \
-      if wget -q -O /tmp/prusaslicer.asset "$URL"; then \
-        echo "Downloaded $ASSET"; \
-        GOT=1; break 2; \
-      fi; \
-    done; \
-  done; \
-  if [ -z "${GOT}" ]; then echo "Failed to download PrusaSlicer for ${PRUSA_VERSION}" >&2; exit 1; fi; \
-  # Inspect and extract accordingly
-  file /tmp/prusaslicer.asset || true; \
-  if file /tmp/prusaslicer.asset | grep -qi "XZ" || file /tmp/prusaslicer.asset | grep -qi "XZ compressed"; then \
-    tar -xJf /tmp/prusaslicer.asset -C /opt/prusaslicer || true; \
-  elif file /tmp/prusaslicer.asset | grep -qi "gzip" || file /tmp/prusaslicer.asset | grep -qi "gzip compressed"; then \
-    tar -xzf /tmp/prusaslicer.asset -C /opt/prusaslicer || true; \
-  elif file /tmp/prusaslicer.asset | grep -qi "AppImage" || echo "/tmp/prusaslicer.asset" | grep -q "AppImage"; then \
-    chmod +x /tmp/prusaslicer.asset; /tmp/prusaslicer.asset --appimage-extract; mv squashfs-root/* /opt/prusaslicer || true; \
-  else \
-    # fallback: attempt to extract as tar
-    tar -xvf /tmp/prusaslicer.asset -C /opt/prusaslicer || true; \
+  TAG="v${PRUSA_VERSION}"; \
+  URL="https://github.com/prusa3d/PrusaSlicer/releases/download/${TAG}/PrusaSlicer-${TAG}-Linux-x86_64-gtk3.tar.xz"; \
+  echo "Downloading PrusaSlicer from $URL"; \
+  if ! wget -q -O /tmp/prusaslicer.tar.xz "$URL"; then \
+    # fallback to non-v tag
+    TAG2="${PRUSA_VERSION}"; \
+    URL2="https://github.com/prusa3d/PrusaSlicer/releases/download/${TAG2}/PrusaSlicer-${TAG2}-Linux-x86_64-gtk3.tar.xz"; \
+    echo "Primary URL failed, trying $URL2"; \
+    if ! wget -q -O /tmp/prusaslicer.tar.xz "$URL2"; then \
+      echo "Failed to download PrusaSlicer for ${PRUSA_VERSION}" >&2; exit 1; \
+    fi; \
   fi; \
-  # Locate the prusa-slicer executable and copy to /usr/local/bin
-  if [ -x /opt/prusaslicer/usr/bin/prusa-slicer ]; then \
-    cp /opt/prusaslicer/usr/bin/prusa-slicer /usr/local/bin/prusa-slicer; \
-  elif [ -x /opt/prusaslicer/prusa-slicer ]; then \
-    cp /opt/prusaslicer/prusa-slicer /usr/local/bin/prusa-slicer; \
-  elif [ -x /opt/prusaslicer/AppRun ]; then \
-    cp /opt/prusaslicer/AppRun /usr/local/bin/prusa-slicer; \
-  elif [ -x /opt/prusaslicer/bin/prusa-slicer ]; then \
-    cp /opt/prusaslicer/bin/prusa-slicer /usr/local/bin/prusa-slicer; \
+  echo "Extracting PrusaSlicer archive to /opt/prusaslicer"; \
+  tar -xJf /tmp/prusaslicer.tar.xz -C /opt/prusaslicer || (echo "tar extraction failed" >&2; ls -la /tmp || true; exit 1); \
+  echo "Listing extracted files (top-level)"; ls -la /opt/prusaslicer || true; \
+  echo "Listing extracted files (one level down)"; ls -la /opt/prusaslicer/* || true; \
+  # Locate prusa-slicer binary
+  BIN=$(find /opt/prusaslicer -type f -name 'prusa-slicer' -perm /111 | head -n1 || true); \
+  if [ -n "$BIN" ]; then \
+    echo "Found binary: $BIN"; cp "$BIN" /usr/local/bin/prusa-slicer; \
   else \
-    echo "Warning: prusa-slicer executable not found in extracted archive" >&2; \
+    echo "prusa-slicer binary not found in extracted archive" >&2; ls -R /opt/prusaslicer || true; exit 1; \
   fi; \
-  chmod +x /usr/local/bin/prusa-slicer || true; \
-  rm -f /tmp/prusaslicer.asset || true; \
-  echo "PRUSA: listing /opt/prusaslicer"; ls -la /opt/prusaslicer || true; \
-  echo "PRUSA: listing /usr/local/bin/prusa-slicer"; ls -la /usr/local/bin/prusa-slicer || true
+  chmod +x /usr/local/bin/prusa-slicer; rm -f /tmp/prusaslicer.tar.xz || true
 
 # Verify PrusaSlicer is available (fail build if not)
 RUN /usr/local/bin/prusa-slicer --version
