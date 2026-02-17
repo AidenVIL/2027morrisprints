@@ -7,8 +7,15 @@ export async function adminFetch(path: string, options?: RequestInit) {
   if (!apiBaseUrl) throw new Error('API base URL not configured');
   if (!token) throw new Error('Admin token not configured');
 
-  const base = apiBaseUrl.replace(/\/$/, '');
-  const url = path.startsWith('http') ? path : `${base}${path.startsWith('/') ? '' : '/'}${path}`;
+  // In dev, use relative paths so the Vite dev server proxy can forward requests
+  const isDev = import.meta.env.DEV;
+  let url: string;
+  if (isDev) {
+    url = path.startsWith('http') ? path : (path.startsWith('/') ? path : `/${path}`);
+  } else {
+    const base = apiBaseUrl.replace(/\/$/, '');
+    url = path.startsWith('http') ? path : `${base}${path.startsWith('/') ? '' : '/'}${path}`;
+  }
 
   const headers: Record<string, string> = {
     'x-admin-token': token,
