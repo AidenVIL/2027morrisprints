@@ -1,12 +1,13 @@
 FROM node:22-bullseye
 
+ARG PRUSA_VERSION=2.7.4
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install runtime deps required by PrusaSlicer AppImage and tooling
+# Install runtime deps required by PrusaSlicer and tooling
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    wget \
     curl \
+    wget \
     bzip2 \
     xz-utils \
     tar \
@@ -25,42 +26,54 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglu1-mesa \
     libxcb1 \
     libgomp1 \
+    ca-certificates \
     unzip \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
 
-# Download latest PrusaSlicer AppImage from GitHub Releases (uses API to avoid brittle hardcoded URLs)
-# This finds the first linux64 AppImage asset on the latest release and downloads it.
+# Download PrusaSlicer from official GitHub releases using the provided PRUSA_VERSION ARG.
+# Try a few common asset naming patterns and both tag formats (with and without leading 'v').
 RUN set -eux; \
-  # Find a suitable linux64 asset (prefer tar.* or tar.xz, fall back to AppImage)
-  ASSET_LINE=$(curl -s https://api.github.com/repos/prusa3d/PrusaSlicer/releases/latest | grep "browser_download_url" | grep linux64 | head -n1 || true); \
-  ASSET_URL=$(echo "$ASSET_LINE" | cut -d '"' -f4); \
-  if [ -z "$ASSET_URL" ]; then echo "Could not determine PrusaSlicer asset URL" >&2; exit 1; fi; \
-  echo "Downloading PrusaSlicer asset: $ASSET_URL"; \
-  wget -q -O /tmp/prusaslicer.asset "$ASSET_URL"; \
-  # Extract based on file type
+  mkdir -p /opt/prusaslicer; \
+  for TAG in "$PRUSA_VERSION" "v$PRUSA_VERSION"; do \
+    for ASSET in \
+      "PrusaSlicer-${TAG}-Linux-x86_64-gtk3.tar.xz" \
+      "PrusaSlicer-${TAG}-Linux-x86_64.tar.xz" \
+      "PrusaSlicer-${TAG}-linux-x86_64.tar.xz" \
+      "PrusaSlicer-${TAG}-linux-x86_64-GTK3.tar.xz" \
+      "PrusaSlicer-${TAG}.AppImage" \
+      "PrusaSlicer-${TAG}-linux-x86_64.AppImage"; do \
+      URL="https://github.com/prusa3d/PrusaSlicer/releases/download/${TAG}/${ASSET}"; \
+      echo "Trying $URL"; \
+      if wget -q -O /tmp/prusaslicer.asset "$URL"; then \
+        echo "Downloaded $ASSET"; \
+        GOT=1; break 2; \
+      fi; \
+    done; \
+  done; \
+  if [ -z "${GOT}" ]; then echo "Failed to download PrusaSlicer for ${PRUSA_VERSION}" >&2; exit 1; fi; \
+  # Inspect and extract accordingly
   file /tmp/prusaslicer.asset || true; \
-  if file /tmp/prusaslicer.asset | grep -q "XZ compressed" || file /tmp/prusaslicer.asset | grep -q "XZ"; then \
-    mkdir -p /tmp/prusaslicer && tar -xJf /tmp/prusaslicer.asset -C /tmp/prusaslicer --strip-components=0 || true; \
-    mv /tmp/prusaslicer/* /opt/prusaslicer || true; \
-  elif file /tmp/prusaslicer.asset | grep -q "gzip compressed" || file /tmp/prusaslicer.asset | grep -q "gzip"; then \
-    mkdir -p /tmp/prusaslicer && tar -xzf /tmp/prusaslicer.asset -C /tmp/prusaslicer --strip-components=0 || true; \
-    mv /tmp/prusaslicer/* /opt/prusaslicer || true; \
-  elif file /tmp/prusaslicer.asset | grep -q "ISO 9660" || file /tmp/prusaslicer.asset | grep -q "AppImage" || echo "$ASSET_URL" | grep -q "AppImage"; then \
-    chmod +x /tmp/prusaslicer.asset; /tmp/prusaslicer.asset --appimage-extract; mv squashfs-root /opt/prusaslicer || true; \
+  if file /tmp/prusaslicer.asset | grep -qi "XZ" || file /tmp/prusaslicer.asset | grep -qi "XZ compressed"; then \
+    tar -xJf /tmp/prusaslicer.asset -C /opt/prusaslicer || true; \
+  elif file /tmp/prusaslicer.asset | grep -qi "gzip" || file /tmp/prusaslicer.asset | grep -qi "gzip compressed"; then \
+    tar -xzf /tmp/prusaslicer.asset -C /opt/prusaslicer || true; \
+  elif file /tmp/prusaslicer.asset | grep -qi "AppImage" || echo "/tmp/prusaslicer.asset" | grep -q "AppImage"; then \
+    chmod +x /tmp/prusaslicer.asset; /tmp/prusaslicer.asset --appimage-extract; mv squashfs-root/* /opt/prusaslicer || true; \
   else \
-    # fallback: try to treat as tar
-    mkdir -p /tmp/prusaslicer && tar -xvf /tmp/prusaslicer.asset -C /tmp/prusaslicer || true; mv /tmp/prusaslicer/* /opt/prusaslicer || true; \
+    # fallback: attempt to extract as tar
+    tar -xvf /tmp/prusaslicer.asset -C /opt/prusaslicer || true; \
   fi; \
-  # Locate the prusa-slicer binary inside extracted tree and copy to /usr/local/bin
+  # Locate the prusa-slicer executable and copy to /usr/local/bin
   if [ -x /opt/prusaslicer/usr/bin/prusa-slicer ]; then \
     cp /opt/prusaslicer/usr/bin/prusa-slicer /usr/local/bin/prusa-slicer; \
   elif [ -x /opt/prusaslicer/prusa-slicer ]; then \
     cp /opt/prusaslicer/prusa-slicer /usr/local/bin/prusa-slicer; \
   elif [ -x /opt/prusaslicer/AppRun ]; then \
-    # AppRun may exec the binary; copy AppRun as a wrapper
     cp /opt/prusaslicer/AppRun /usr/local/bin/prusa-slicer; \
+  elif [ -x /opt/prusaslicer/bin/prusa-slicer ]; then \
+    cp /opt/prusaslicer/bin/prusa-slicer /usr/local/bin/prusa-slicer; \
   else \
     echo "Warning: prusa-slicer executable not found in extracted archive" >&2; \
   fi; \
@@ -70,8 +83,9 @@ RUN set -eux; \
   echo "PRUSA: listing /usr/local/bin/prusa-slicer"; ls -la /usr/local/bin/prusa-slicer || true
 
 # Verify PrusaSlicer is available (fail build if not)
-RUN which prusa-slicer
-RUN prusa-slicer --version
+RUN /usr/local/bin/prusa-slicer --version
+RUN which prusa-slicer || true
+RUN ls -la /usr/local/bin/prusa-slicer || true
 
 # Copy package files and install dependencies
 COPY package*.json ./
