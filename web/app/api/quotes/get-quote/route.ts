@@ -36,8 +36,27 @@ export async function POST(req: Request) {
     const geom = analyzeStl(buf)
 
     // fetch inventory item and app settings
-    const { data: itemData, error: itemErr } = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available').eq('id', inventory_item_id).single()
-    if (itemErr || !itemData) return NextResponse.json({ error: 'inventory_item_not_found' }, { status: 400 })
+    // resolve inventory item: prefer provided id, otherwise try to match by material name or pick first active
+    let itemData: any = null
+    let itemErr: any = null
+    if (inventory_item_id) {
+      const r = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available, is_active').eq('id', inventory_item_id).maybeSingle()
+      itemData = r.data; itemErr = r.error
+    }
+    if (!itemData) {
+      // try to match by material name sent from client
+      const materialName = String(body?.material || '').trim() || null
+      if (materialName) {
+        const r2 = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available, is_active').ilike('material', materialName).eq('is_active', true).limit(1).maybeSingle()
+        itemData = r2.data; itemErr = r2.error
+      }
+    }
+    if (!itemData) {
+      // fallback: take first active inventory item
+      const r3 = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available, is_active').eq('is_active', true).limit(1).maybeSingle()
+      itemData = r3.data; itemErr = r3.error
+    }
+    if (itemErr || !itemData) return NextResponse.json({ error: 'inventory_item_not_found', providedInventoryItemId: inventory_item_id, providedMaterial: body?.material || null }, { status: 400 })
 
     const { data: settingsData } = await supabaseAdmin.from('app_settings').select('*').limit(1).maybeSingle()
 
