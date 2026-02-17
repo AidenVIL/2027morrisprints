@@ -4,7 +4,9 @@ import path from 'path';
 import os from 'os';
 import { parseGcode } from './parseGcode';
 
-export async function estimate(filePath: string, opts?: { density?: number, timeoutMs?: number }) {
+export type PrusaEstimate = { timeSeconds: number | null; grams: number | null; filamentMm?: number | null };
+
+export async function estimate(filePath: string, opts?: { density?: number; timeoutMs?: number }): Promise<PrusaEstimate> {
   const density = opts?.density ?? 1.24;
   const timeoutMs = opts?.timeoutMs ?? 120000;
 
@@ -13,7 +15,7 @@ export async function estimate(filePath: string, opts?: { density?: number, time
 
   const bin = process.env.PRUSASLICER_BIN || '/usr/local/bin/prusa-slicer';
 
-  return new Promise(async (resolve, reject) => {
+  return new Promise<PrusaEstimate>(async (resolve, reject) => {
     const args = ['--no-gui', '--export-gcode', '-o', outGcode, filePath];
     let finished = false;
     const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -40,7 +42,7 @@ export async function estimate(filePath: string, opts?: { density?: number, time
         const exists = await fs.stat(outGcode).then(() => true).catch(() => false);
         if (!exists) return reject(new Error('G-code not produced'));
         const parsed = parseGcode(outGcode, density);
-        resolve(parsed);
+        resolve(parsed as PrusaEstimate);
       } catch (e) {
         reject(e);
       } finally {
