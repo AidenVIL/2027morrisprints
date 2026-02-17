@@ -23,6 +23,14 @@ export async function POST(req: Request) {
     const path = storagePath || filePath
     if (!path) return NextResponse.json({ error: 'missing file path' }, { status: 400 })
 
+    // Log which Supabase host we're using (hostname only, don't log keys)
+    try {
+      const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+      if (supabaseUrl) {
+        try { console.info('Supabase host:', new URL(supabaseUrl).hostname) } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore logging errors */ }
+
     // download file from storage
     const { data: downloadData, error: downloadErr } = await supabaseAdmin.storage.from('models').download(path)
     if (downloadErr || !downloadData) return NextResponse.json({ error: 'failed to download file', details: String(downloadErr?.message || downloadErr) }, { status: 400 })
@@ -57,7 +65,26 @@ export async function POST(req: Request) {
       const r3 = await supabaseAdmin.from('inventory_items').select('id, cost_per_kg_gbp, density_g_per_cm3, support_multiplier, grams_available, is_active').eq('is_active', true).limit(1).maybeSingle()
       itemData = r3.data; itemErr = r3.error
     }
-    if (itemErr || !itemData) return NextResponse.json({ error: 'inventory_item_not_found', providedInventoryItemId: inventory_item_id, providedMaterial: body?.material || null }, { status: 400 })
+    if (itemErr || !itemData) {
+      // gather debug info: total count + sample rows
+      let total: number | null = null
+      let sample: any[] = []
+      try {
+        const countRes = await supabaseAdmin.from('inventory_items').select('id', { count: 'exact', head: true })
+        total = typeof countRes.count === 'number' ? countRes.count : null
+      } catch (e) {
+        console.error('inventory count query failed', e)
+      }
+      try {
+        const sampleRes = await supabaseAdmin.from('inventory_items').select('id, material, colour').limit(5)
+        sample = sampleRes.data || []
+      } catch (e) {
+        console.error('inventory sample query failed', e)
+      }
+
+      console.error('inventory_item_not_found', { providedInventoryItemId: inventory_item_id, providedMaterial: body?.material || null, total, sampleCount: sample.length })
+      return NextResponse.json({ error: 'inventory_item_not_found', providedInventoryItemId: inventory_item_id, providedMaterial: body?.material || null, debug: { total, sample } }, { status: 400 })
+    }
 
     const { data: settingsData } = await supabaseAdmin.from('app_settings').select('*').limit(1).maybeSingle()
 
