@@ -167,7 +167,8 @@ export async function POST(req: Request) {
       price_pence: Math.round((pricing?.final ?? 0) * 100),
     };
 
-    return NextResponse.json({ ok: true, estimated, breakdown: pricing, geometry: { volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox } })
+    // return the draft quote id so the client can reference the UNCONFIRMED draft
+    return NextResponse.json({ ok: true, quoteDraftId: quoteId, estimated, breakdown: pricing, geometry: { volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox } })
   } catch (e) {
     console.error('get-quote error', e)
     return NextResponse.json({ ok: false, error: 'failed', details: String(e) }, { status: 500 })

@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect } from 'react';
+import { useCartStore } from '../../../lib/cart/store';
+import { v4 as uuidv4 } from 'uuid';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -32,7 +34,21 @@ export default function NewQuote() {
   const [showAuth, setShowAuth] = useState(false);
   const [materials, setMaterials] = useState<any[]>([])
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
-  const [estimate, setEstimate] = useState<{grams:number,timeSeconds:number,price:number}|null>(null)
+  const [quotePreview, setQuotePreview] = useState<null | {
+    quoteDraftId?: string,
+    grams: number,
+    timeSeconds: number,
+    breakdown: any,
+    finalPrice: number,
+    inventory_item_id: string,
+    layerPreset: string,
+    infillPercent: number,
+    supports: boolean,
+    quantity: number,
+    storagePath: string,
+    originalName: string,
+  }>(null)
+  const [uiStep, setUiStep] = useState<'form'|'preview'>('form')
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const [originalName, setOriginalName] = useState<string | null>(null);
@@ -136,11 +152,23 @@ export default function NewQuote() {
       return;
     }
 
-    // show estimate summary and navigate to cart
-    setEstimate({ grams: gqJson.estimated.grams, timeSeconds: gqJson.estimated.timeSeconds, price: gqJson.estimated.price || gqJson.estimated.price_pence || gqJson.estimated.price });
+    // set preview data and show preview UI (do not auto-navigate)
+    setQuotePreview({
+      quoteDraftId: gqJson.quoteDraftId,
+      grams: Number(gqJson.estimated?.grams || 0),
+      timeSeconds: Number(gqJson.estimated?.timeSeconds || 0),
+      breakdown: gqJson.breakdown || {},
+      finalPrice: Number(gqJson.estimated?.price_pence || gqJson.estimated?.price || 0),
+      inventory_item_id: inventory_item_id,
+      layerPreset: payload.layerPreset,
+      infillPercent: Number(payload.infillPercent || 0),
+      supports: Boolean(payload.supports),
+      quantity: Number(payload.quantity || 1),
+      storagePath: String(payload.storagePath || ''),
+      originalName: String(payload.originalName || ''),
+    });
+    setUiStep('preview');
     setLoading(false);
-    // navigate to cart after short delay so estimate card is visible
-    setTimeout(()=>router.push('/cart'), 700);
   }
 
   // upload-only handler called by ModelDropzone. Uploads to server and stores returned path.
@@ -197,7 +225,8 @@ export default function NewQuote() {
   return (
     <div className="max-w-2xl mx-auto p-6">
       <h2 className="text-xl font-semibold mb-4">New Quote</h2>
-      <form onSubmit={handleSubmit(getQuote)} className="space-y-4">
+      {uiStep === 'form' && (
+        <form onSubmit={handleSubmit(getQuote)} className="space-y-4">
         {/* Model uploader */}
         <ModelDropzone
           onFileChange={(f)=>setSelectedFile(f)}
@@ -293,17 +322,64 @@ export default function NewQuote() {
             <pre className="text-xs bg-gray-100 p-2 rounded max-h-40 overflow-auto">{JSON.stringify(lastResponse, null, 2)}</pre>
           </div>
         </details>
-        {estimate && (
-          <div className="mt-3 p-3 border rounded bg-gray-50">
-            <div>Estimated filament: <strong>{estimate.grams} g</strong></div>
-            <div>Estimated print time: <strong>{Math.round(estimate.timeSeconds/60)} min</strong></div>
-            <div>Estimated price: <strong>£{(estimate.price/100).toFixed(2)}</strong></div>
-            <div className="mt-3 flex gap-2">
-              <a href="/cart" className="px-3 py-2 bg-indigo-600 text-white rounded">Go to cart</a>
+        </form>
+      )}
+
+      {uiStep === 'preview' && quotePreview && (
+        <div className="mt-3 p-4 border rounded bg-white">
+          <div className="flex justify-between items-start">
+            <div>
+              <div className="text-sm text-gray-600">Preview</div>
+              <div className="text-lg font-semibold">Estimated cost: £{(quotePreview.finalPrice/100).toFixed(2)}</div>
+              <div className="text-sm text-gray-500">{materials.find((m:any)=>m.id===quotePreview.inventory_item_id)?.material || 'Material'}</div>
+            </div>
+            <div>
+              <div className="text-sm">{quotePreview.grams} g</div>
+              <div className="text-sm">{(Math.floor(quotePreview.timeSeconds/3600)).toString().padStart(2,'0')}:{(Math.floor((quotePreview.timeSeconds%3600)/60)).toString().padStart(2,'0')}</div>
             </div>
           </div>
-        )}
-      </form>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+            <div>Material cost</div><div className="text-right">£{((quotePreview.breakdown?.material_cost ?? quotePreview.breakdown?.materialCost ?? 0)/100).toFixed(2)}</div>
+            <div>Machine time</div><div className="text-right">£{((quotePreview.breakdown?.machine_cost ?? quotePreview.breakdown?.machineCost ?? 0)/100).toFixed(2)}</div>
+            <div>Electricity</div><div className="text-right">£{((quotePreview.breakdown?.electricity_cost ?? quotePreview.breakdown?.electricityCost ?? 0)/100).toFixed(2)}</div>
+            <div>Labour</div><div className="text-right">£{((quotePreview.breakdown?.labour ?? quotePreview.breakdown?.labour_fee ?? 0)/100).toFixed(2)}</div>
+            <div>Extras</div><div className="text-right">£{((quotePreview.breakdown?.extras ?? 0)/100).toFixed(2)}</div>
+            <div className="font-semibold">Total</div><div className="text-right font-semibold">£{(quotePreview.finalPrice/100).toFixed(2)}</div>
+          </div>
+
+          <div className="mt-4 flex gap-2">
+            <button className="px-3 py-2 border rounded" onClick={()=>{
+              if (!quotePreview) return;
+              const existing = useCartStore.getState().items.find((it:any) => {
+                return it.quoteSnapshot?.quoteDraftId && quotePreview.quoteDraftId && it.quoteSnapshot.quoteDraftId === quotePreview.quoteDraftId;
+              });
+              if (existing) {
+                // simple toast replacement
+                try { window.alert('Already in cart'); } catch(e){}
+                return;
+              }
+              const id = uuidv4();
+              useCartStore.getState().addItem({ id, createdAt: new Date().toISOString(), quoteSnapshot: quotePreview });
+              try { window.alert('Added to cart'); } catch(e){}
+              // stay on preview
+            }}>Add to cart</button>
+            <button className="px-3 py-2 bg-indigo-600 text-white rounded" onClick={()=>{
+              if (!quotePreview) return;
+              const existing = useCartStore.getState().items.find((it:any) => {
+                return it.quoteSnapshot?.quoteDraftId && quotePreview.quoteDraftId && it.quoteSnapshot.quoteDraftId === quotePreview.quoteDraftId;
+              });
+              if (!existing) {
+                const id = uuidv4();
+                useCartStore.getState().addItem({ id, createdAt: new Date().toISOString(), quoteSnapshot: quotePreview });
+              }
+              // ensure cart not empty and navigate to checkout
+              router.push('/checkout');
+            }}>Proceed to checkout</button>
+            <button className="ml-auto px-3 py-2 text-sm text-gray-600" onClick={()=>{ setUiStep('form'); setQuotePreview(null); }}>Back to edit</button>
+          </div>
+        </div>
+      )}
       {showAuth && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-40">
           <div className="bg-white rounded p-6 w-full max-w-md">
