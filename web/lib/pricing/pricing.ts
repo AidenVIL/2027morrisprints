@@ -96,7 +96,8 @@ export function estimatePricing(
     n(extras.smallPartFee, 0)
 
   const subtotal = round2(n(subtotalRaw, 0))
-  const final = round2(n(roundUpToNearest05(subtotal), 0))
+  // final price is simple sum (no automatic rounding up)
+  const final = round2(subtotal)
 
   return {
     materialCost: round2(n(materialCost, 0)),
@@ -107,9 +108,9 @@ export function estimatePricing(
     electricityCost: round2(n(electricityCost, 0)),
     electricityCharge: round2(n(electricityCharge, 0)),
     labourCharge: round2(n(labourCharge, 0)),
-    extras: { minOrderFee: n(extras.minOrderFee, 0), supportsFee: n(extras.supportsFee, 0), smallPartFee: n(extras.smallPartFee, 0) },
-    subtotal: n(subtotal, 0),
-    final: n(final, 0),
+    extras: { minOrderFee: round2(n(extras.minOrderFee, 0)), supportsFee: round2(n(extras.supportsFee, 0)), smallPartFee: round2(n(extras.smallPartFee, 0)) },
+    subtotal: round2(n(subtotal, 0)),
+    final: round2(n(final, 0)),
   }
 }
 
