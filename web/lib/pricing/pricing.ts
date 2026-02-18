@@ -51,22 +51,24 @@ export function estimatePricing(
   material: Material,
   settings: PricingSettings
 ): PricingBreakdown {
-  const machine_rate_per_hour_gbp = Number(settings.machine_rate_per_hour_gbp ?? 0.3)
-  const electricity_price_per_kwh_gbp = Number(settings.electricity_price_per_kwh_gbp ?? 0)
-  const printer_avg_watts = Number(settings.printer_avg_watts ?? 120)
-  const electricity_markup = Number(settings.electricity_markup ?? 1.1)
-  const material_markup = Number(settings.material_markup ?? 1.5)
-  const labour_fee_gbp = Number(settings.labour_fee_gbp ?? 1.0)
+  const n = (x: any, fallback = 0) => (Number.isFinite(Number(x)) ? Number(x) : fallback)
 
-  const min_order_fee = Math.max(0, Number(settings.min_order_fee_gbp ?? 0))
-  const supports_fee_setting = Math.max(0, Number(settings.supports_fee_gbp ?? 0))
-  const small_part_fee_threshold = Number(settings.small_part_fee_threshold_g ?? 15)
-  const small_part_fee_gbp = Number(settings.small_part_fee_gbp ?? 0.5)
+  const machine_rate_per_hour_gbp = n(settings.machine_rate_per_hour_gbp, 0.3)
+  const electricity_price_per_kwh_gbp = n(settings.electricity_price_per_kwh_gbp, 0)
+  const printer_avg_watts = n(settings.printer_avg_watts, 120)
+  const electricity_markup = n(settings.electricity_markup, 1.1)
+  const material_markup = n(settings.material_markup, 1.5)
+  const labour_fee_gbp = n(settings.labour_fee_gbp, 1.0)
 
-  const safeGrams = Math.max(0, Number(grams || 0))
-  const safeTimeSec = Math.max(0, Number(timeSeconds || 0))
+  const min_order_fee = Math.max(0, n(settings.min_order_fee_gbp, 0))
+  const supports_fee_setting = Math.max(0, n(settings.supports_fee_gbp, 0))
+  const small_part_fee_threshold = n(settings.small_part_fee_threshold_g, 15)
+  const small_part_fee_gbp = n(settings.small_part_fee_gbp, 0.5)
 
-  const materialCost = (safeGrams / 1000) * Number(material.cost_per_kg_gbp || 0)
+  const safeGrams = Math.max(0, n(grams, 0))
+  const safeTimeSec = Math.max(0, n(timeSeconds, 0))
+
+  const materialCost = (safeGrams / 1000) * n(material.cost_per_kg_gbp, 0)
   const materialCharge = materialCost * material_markup
 
   const machineHours = safeTimeSec / 3600
@@ -78,37 +80,36 @@ export function estimatePricing(
 
   const labourCharge = labour_fee_gbp
 
-  // extras
+  // extras - always numbers
   const extras: Extras = { minOrderFee: 0, supportsFee: 0, smallPartFee: 0 }
   if (min_order_fee > 0) extras.minOrderFee = min_order_fee
-  // supports fee is applied by settings if provided; caller should indicate supports separately by adding supportsFee here as needed
   extras.supportsFee = supports_fee_setting
   if (safeGrams < small_part_fee_threshold) extras.smallPartFee = small_part_fee_gbp
 
   const subtotalRaw =
-    materialCharge +
-    machineCharge +
-    electricityCharge +
-    labourCharge +
-    extras.minOrderFee +
-    extras.supportsFee +
-    extras.smallPartFee
+    n(materialCharge, 0) +
+    n(machineCharge, 0) +
+    n(electricityCharge, 0) +
+    n(labourCharge, 0) +
+    n(extras.minOrderFee, 0) +
+    n(extras.supportsFee, 0) +
+    n(extras.smallPartFee, 0)
 
-  const subtotal = round2(subtotalRaw)
-  const final = round2(roundUpToNearest05(subtotal))
+  const subtotal = round2(n(subtotalRaw, 0))
+  const final = round2(n(roundUpToNearest05(subtotal), 0))
 
   return {
-    materialCost: round2(materialCost),
-    materialCharge: round2(materialCharge),
-    machineHours: round2(machineHours),
-    machineCharge: round2(machineCharge),
-    electricityKwh: round2(electricityKwh),
-    electricityCost: round2(electricityCost),
-    electricityCharge: round2(electricityCharge),
-    labourCharge: round2(labourCharge),
-    extras,
-    subtotal,
-    final,
+    materialCost: round2(n(materialCost, 0)),
+    materialCharge: round2(n(materialCharge, 0)),
+    machineHours: round2(n(machineHours, 0)),
+    machineCharge: round2(n(machineCharge, 0)),
+    electricityKwh: round2(n(electricityKwh, 0)),
+    electricityCost: round2(n(electricityCost, 0)),
+    electricityCharge: round2(n(electricityCharge, 0)),
+    labourCharge: round2(n(labourCharge, 0)),
+    extras: { minOrderFee: n(extras.minOrderFee, 0), supportsFee: n(extras.supportsFee, 0), smallPartFee: n(extras.smallPartFee, 0) },
+    subtotal: n(subtotal, 0),
+    final: n(final, 0),
   }
 }
 

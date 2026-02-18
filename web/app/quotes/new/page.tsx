@@ -340,12 +340,26 @@ export default function NewQuote() {
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-            <div>Material cost</div><div className="text-right">£{((quotePreview.breakdown?.material_cost ?? quotePreview.breakdown?.materialCost ?? 0)/100).toFixed(2)}</div>
-            <div>Machine time</div><div className="text-right">£{((quotePreview.breakdown?.machine_cost ?? quotePreview.breakdown?.machineCost ?? 0)/100).toFixed(2)}</div>
-            <div>Electricity</div><div className="text-right">£{((quotePreview.breakdown?.electricity_cost ?? quotePreview.breakdown?.electricityCost ?? 0)/100).toFixed(2)}</div>
-            <div>Labour</div><div className="text-right">£{((quotePreview.breakdown?.labour ?? quotePreview.breakdown?.labour_fee ?? 0)/100).toFixed(2)}</div>
-            <div>Extras</div><div className="text-right">£{((quotePreview.breakdown?.extras ?? 0)/100).toFixed(2)}</div>
-            <div className="font-semibold">Total</div><div className="text-right font-semibold">£{(quotePreview.finalPrice/100).toFixed(2)}</div>
+            {(() => {
+              const n = (x:any, fallback=0) => Number.isFinite(Number(x)) ? Number(x) : fallback;
+              const b = quotePreview.breakdown || {};
+              const materialCost = n(b.materialCost ?? b.material_cost ?? 0);
+              const machineCharge = n(b.machineCharge ?? b.machine_charge ?? 0);
+              const electricityCharge = n(b.electricityCharge ?? b.electricity_cost ?? b.electricityCost ?? 0);
+              const labourCharge = n(b.labourCharge ?? b.labour ?? b.labour_fee ?? 0);
+              const extrasObj = b.extras || {};
+              const extrasTotal = n(extrasObj.minOrderFee ?? extrasObj.min_order_fee ?? extrasObj.minOrderFee ?? 0) + n(extrasObj.supportsFee ?? extrasObj.supports_fee ?? extrasObj.supportsFee ?? 0) + n(extrasObj.smallPartFee ?? extrasObj.small_part_fee ?? extrasObj.smallPartFee ?? 0);
+              return (
+                <>
+                  <div>Material cost</div><div className="text-right">£{materialCost.toFixed(2)}</div>
+                  <div>Machine time</div><div className="text-right">£{machineCharge.toFixed(2)}</div>
+                  <div>Electricity</div><div className="text-right">£{electricityCharge.toFixed(2)}</div>
+                  <div>Labour</div><div className="text-right">£{labourCharge.toFixed(2)}</div>
+                  <div>Extras</div><div className="text-right">£{extrasTotal.toFixed(2)}</div>
+                  <div className="font-semibold">Total</div><div className="text-right font-semibold">£{(quotePreview.finalPrice/100).toFixed(2)}</div>
+                </>
+              )
+            })()}
           </div>
 
           <div className="mt-4 flex gap-2">
