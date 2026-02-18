@@ -42,7 +42,10 @@ type Item = {
   colour: string;
   grams_available: number;
   grams_reserved: number;
-  cost_per_kg_pence: number;
+  cost_per_kg_pence?: number;
+  cost_per_kg_gbp?: number;
+  density_g_per_cm3?: number;
+  support_multiplier?: number;
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -107,6 +110,26 @@ export default function InventoryPage() {
     }
   }
 
+  // Edit flow
+  const editDisclosure = useDisclosure();
+  const [editItem, setEditItem] = useState<Item | null>(null);
+  const [editGramsAvailable, setEditGramsAvailable] = useState<number>(0);
+  const [editGramsReserved, setEditGramsReserved] = useState<number>(0);
+  const [editCost, setEditCost] = useState<number>(0);
+  const [editDensity, setEditDensity] = useState<number | undefined>(undefined);
+  const [editSupportMultiplier, setEditSupportMultiplier] = useState<number | undefined>(undefined);
+
+  function openEdit(it: Item) {
+    setEditItem(it);
+    setEditGramsAvailable(it.grams_available || 0);
+    setEditGramsReserved(it.grams_reserved || 0);
+    setEditCost((it.cost_per_kg_gbp ?? ((it.cost_per_kg_pence || 0) / 100)) || 0);
+    // read density/support if present on payload
+    setEditDensity(it.density_g_per_cm3 ?? undefined);
+    setEditSupportMultiplier(it.support_multiplier ?? undefined);
+    editDisclosure.onOpen();
+  }
+
   return (
     <PageContainer>
       <Stack direction="row" justify="space-between" align="center" mb={4}>
@@ -124,6 +147,8 @@ export default function InventoryPage() {
             <Th isNumeric>Grams Available</Th>
             <Th isNumeric>Grams Reserved</Th>
             <Th isNumeric>Grams Free</Th>
+            <Th isNumeric>Density (g/cm³)</Th>
+            <Th isNumeric>Support ×</Th>
             <Th isNumeric>Cost / KG</Th>
             <Th>Status</Th>
             <Th>Actions</Th>
@@ -141,13 +166,16 @@ export default function InventoryPage() {
               <Td isNumeric>{it.grams_available}</Td>
               <Td isNumeric>{it.grams_reserved}</Td>
               <Td isNumeric>{gramsFree(it)}</Td>
-              <Td isNumeric>{costDisplay(it.cost_per_kg_pence || 0)}</Td>
+              <Td isNumeric>{(it.density_g_per_cm3 ?? (it as any).density ?? 1.24).toFixed(2)}</Td>
+              <Td isNumeric>{(it.support_multiplier ?? (it as any).supportMultiplier ?? 1.18).toFixed(2)}</Td>
+              <Td isNumeric>{costDisplay((it.cost_per_kg_gbp ?? ((it.cost_per_kg_pence || 0) / 100)) || 0)}</Td>
               <Td>
                 <Badge colorScheme={it.is_active ? 'green' : 'gray'}>{it.is_active ? 'Active' : 'Inactive'}</Badge>
               </Td>
               <Td>
                 <Stack direction="row" spacing={2}>
                   <IconButton aria-label="history" icon={<History size={14} />} size="sm" onClick={() => openHistory(it)} />
+                  <Button size="sm" onClick={() => openEdit(it)}>Edit</Button>
                   <Button size="sm" onClick={() => toggleActive(it)}>{it.is_active ? 'Disable' : 'Enable'}</Button>
                 </Stack>
               </Td>
@@ -190,6 +218,96 @@ export default function InventoryPage() {
           </ModalBody>
           <ModalFooter>
             <Button onClick={onClose}>Close</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Edit Item Modal */}
+      <Modal isOpen={editDisclosure.isOpen} onClose={editDisclosure.onClose} size="md">
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Edit Inventory Item</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {editItem && (
+              <Stack spacing={3}>
+                <FormControl>
+                  <FormLabel>Material</FormLabel>
+                  <Input value={editItem.material} onChange={(e) => setEditItem({...editItem, material: e.target.value})} />
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Colour</FormLabel>
+                  <Input value={editItem.colour} onChange={(e) => setEditItem({...editItem, colour: e.target.value})} />
+                </FormControl>
+
+                <FormControl display="flex" alignItems="center">
+                  <FormLabel mb={0}>Active</FormLabel>
+                  <Switch isChecked={!!editItem.is_active} onChange={(e) => setEditItem({...editItem, is_active: e.target.checked})} />
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Grams available (g)</FormLabel>
+                  <NumberInput value={editGramsAvailable} min={0} onChange={(v) => setEditGramsAvailable(Number(v))}>
+                    <NumberInputField />
+                  </NumberInput>
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Grams reserved (g)</FormLabel>
+                  <NumberInput value={editGramsReserved} min={0} onChange={(v) => setEditGramsReserved(Number(v))}>
+                    <NumberInputField />
+                  </NumberInput>
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Cost per KG (£)</FormLabel>
+                  <NumberInput value={editCost} min={0} step={0.01} onChange={(v) => setEditCost(Number(v))}>
+                    <NumberInputField />
+                  </NumberInput>
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Density (g/cm³)</FormLabel>
+                  <NumberInput value={editDensity ?? 1.24} min={0.1} step={0.01} onChange={(v) => setEditDensity(Number(v))}>
+                    <NumberInputField />
+                  </NumberInput>
+                </FormControl>
+
+                <FormControl>
+                  <FormLabel>Support multiplier</FormLabel>
+                  <NumberInput value={editSupportMultiplier ?? 1.18} min={0.5} step={0.01} onChange={(v) => setEditSupportMultiplier(Number(v))}>
+                    <NumberInputField />
+                  </NumberInput>
+                </FormControl>
+              </Stack>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={editDisclosure.onClose}>Cancel</Button>
+            <Button colorScheme="blue" onClick={async () => {
+              if (!editItem) return;
+              try {
+                const payload: any = {
+                  item_id: editItem.id,
+                  material: editItem.material,
+                  colour: editItem.colour,
+                  is_active: !!editItem.is_active,
+                  grams_available: Number(editGramsAvailable || 0),
+                  grams_reserved: Number(editGramsReserved || 0),
+                  cost_per_kg_gbp: Number(editCost || 0),
+                };
+                if (typeof editDensity === 'number') payload.density_g_per_cm3 = Number(editDensity);
+                if (typeof editSupportMultiplier === 'number') payload.support_multiplier = Number(editSupportMultiplier);
+
+                await adminFetch('/api/admin/inventory/update', { method: 'POST', body: JSON.stringify(payload) });
+                toast({ title: 'Saved', status: 'success' });
+                editDisclosure.onClose();
+                load();
+              } catch (e: any) {
+                toast({ title: 'Failed to save', description: e.message || String(e), status: 'error' });
+              }
+            }}>Save</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

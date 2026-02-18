@@ -160,7 +160,14 @@ export async function POST(req: Request) {
       estimated_price_pence: Math.round(pricing.final * 100),
     })
 
-    return NextResponse.json({ ok: true, grams: mass.grams, timeSeconds: time.timeSeconds, breakdown: pricing, geometry: { volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox } })
+    const estimated = {
+      grams: mass.grams,
+      timeSeconds: time.timeSeconds,
+      // price in pence for client consumption
+      price_pence: Math.round((pricing?.final ?? 0) * 100),
+    };
+
+    return NextResponse.json({ ok: true, estimated, breakdown: pricing, geometry: { volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox } })
   } catch (e) {
     console.error('get-quote error', e)
     return NextResponse.json({ ok: false, error: 'failed', details: String(e) }, { status: 500 })
