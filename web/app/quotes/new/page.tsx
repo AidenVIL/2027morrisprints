@@ -335,7 +335,17 @@ export default function NewQuote() {
             </div>
             <div>
               <div className="text-sm">{quotePreview.grams} g</div>
-              <div className="text-sm">{(Math.floor(quotePreview.timeSeconds/3600)).toString().padStart(2,'0')}:{(Math.floor((quotePreview.timeSeconds%3600)/60)).toString().padStart(2,'0')}</div>
+                <div className="text-sm" title="Estimated print time">{(() => {
+                  const secs = Number(quotePreview.timeSeconds || 0);
+                  if (secs >= 3600) {
+                    let h = Math.floor(secs / 3600);
+                    let m = Math.round((secs % 3600) / 60);
+                    if (m === 60) { h += 1; m = 0; }
+                    return `${h}h${m > 0 ? ' ' + m + 'm' : ''}`;
+                  }
+                  const mins = Math.round(secs / 60);
+                  return `${mins}m`;
+                })()}</div>
             </div>
           </div>
 
