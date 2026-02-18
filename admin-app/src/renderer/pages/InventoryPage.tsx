@@ -86,7 +86,7 @@ export default function InventoryPage() {
   }
 
   function costDisplay(pence: number) {
-    return `£${(pence/100).toFixed(2)}`;
+    return `£${(pence / 100).toFixed(2)}`;
   }
 
   async function openHistory(it: Item) {
@@ -123,7 +123,9 @@ export default function InventoryPage() {
     setEditItem(it);
     setEditGramsAvailable(it.grams_available || 0);
     setEditGramsReserved(it.grams_reserved || 0);
-    setEditCost((it.cost_per_kg_gbp ?? ((it.cost_per_kg_pence || 0) / 100)) || 0);
+    // load cost as GBP decimal for the form (prefer pence if present)
+    const pence = typeof it.cost_per_kg_pence === 'number' ? it.cost_per_kg_pence : (typeof it.cost_per_kg_gbp === 'number' ? Math.round(it.cost_per_kg_gbp * 100) : 0);
+    setEditCost((pence / 100) || 0);
     // read density/support if present on payload
     setEditDensity(it.density_g_per_cm3 ?? undefined);
     setEditSupportMultiplier(it.support_multiplier ?? undefined);
@@ -168,7 +170,12 @@ export default function InventoryPage() {
               <Td isNumeric>{gramsFree(it)}</Td>
               <Td isNumeric>{(it.density_g_per_cm3 ?? (it as any).density ?? 1.24).toFixed(2)}</Td>
               <Td isNumeric>{(it.support_multiplier ?? (it as any).supportMultiplier ?? 1.18).toFixed(2)}</Td>
-              <Td isNumeric>{costDisplay((it.cost_per_kg_gbp ?? ((it.cost_per_kg_pence || 0) / 100)) || 0)}</Td>
+              <Td isNumeric>{
+                (() => {
+                  const pence = typeof it.cost_per_kg_pence === 'number' ? it.cost_per_kg_pence : Math.round((it.cost_per_kg_gbp || 0) * 100);
+                  return costDisplay(pence);
+                })()
+              }</Td>
               <Td>
                 <Badge colorScheme={it.is_active ? 'green' : 'gray'}>{it.is_active ? 'Active' : 'Inactive'}</Badge>
               </Td>
@@ -262,7 +269,7 @@ export default function InventoryPage() {
 
                 <FormControl>
                   <FormLabel>Cost per KG (£)</FormLabel>
-                  <NumberInput value={editCost} min={0} step={0.01} onChange={(v) => setEditCost(Number(v))}>
+                  <NumberInput value={editCost} min={0} max={200} step={0.01} onChange={(v) => setEditCost(Number(v))}>
                     <NumberInputField />
                   </NumberInput>
                 </FormControl>
@@ -287,6 +294,11 @@ export default function InventoryPage() {
             <Button variant="ghost" mr={3} onClick={editDisclosure.onClose}>Cancel</Button>
             <Button colorScheme="blue" onClick={async () => {
               if (!editItem) return;
+              // validation
+              if (editCost < 0 || editCost > 200) {
+                toast({ title: 'Invalid cost', description: 'Cost must be between 0 and 200', status: 'warning' });
+                return;
+              }
               try {
                 const payload: any = {
                   item_id: editItem.id,
@@ -295,7 +307,8 @@ export default function InventoryPage() {
                   is_active: !!editItem.is_active,
                   grams_available: Number(editGramsAvailable || 0),
                   grams_reserved: Number(editGramsReserved || 0),
-                  cost_per_kg_gbp: Number(editCost || 0),
+                  // store as pence integer
+                  cost_per_kg_pence: Math.round(Number(editCost || 0) * 100),
                 };
                 if (typeof editDensity === 'number') payload.density_g_per_cm3 = Number(editDensity);
                 if (typeof editSupportMultiplier === 'number') payload.support_multiplier = Number(editSupportMultiplier);
@@ -359,6 +372,11 @@ export default function InventoryPage() {
                 return;
               }
               const grams = Number(newGrams || 0);
+              // validate cost range
+              if (newCost < 0 || newCost > 200) {
+                toast({ title: 'Invalid cost', description: 'Cost must be between 0 and 200', status: 'warning' });
+                return;
+              }
               const costPence = Math.round(Number(newCost || 0) * 100);
               try {
                 await adminFetch('/api/admin/inventory/create', { method: 'POST', body: JSON.stringify({ material: newMaterial.trim(), colour: newColour.trim(), grams_available: grams, cost_per_kg_pence: costPence }) });

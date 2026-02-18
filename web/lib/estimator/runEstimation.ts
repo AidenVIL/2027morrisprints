@@ -47,8 +47,13 @@ export async function runEstimation(storagePath: string, inventory_item_id: stri
 
   const time = estimateTime({ area_mm2: geom.area_mm2, bbox: { size: { z: geom.bbox.size.z } } }, { V_print_mm3: mass.V_print_mm3, layerHeightMm, supports: Boolean(opts?.supports), preset: String(opts?.layerPreset || 'standard') as any })
 
+  // determine cost stored in pence if available, otherwise fall back to GBP column
+  const costPerKgPence = Number(itemData.cost_per_kg_pence ?? Math.round((Number(itemData.cost_per_kg_gbp ?? 0) * 100)))
+
   const material = {
-    cost_per_kg_gbp: Number(itemData.cost_per_kg_gbp ?? 0),
+    // pricing library expects GBP; derive from pence
+    cost_per_kg_gbp: costPerKgPence / 100,
+    cost_per_kg_pence: costPerKgPence,
     density_g_per_cm3: Number(itemData.density_g_per_cm3 ?? 1.24),
     support_multiplier: Number(itemData.support_multiplier ?? 1.18),
   }

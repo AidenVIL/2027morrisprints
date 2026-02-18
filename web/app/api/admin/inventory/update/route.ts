@@ -19,9 +19,16 @@ export async function POST(req: Request) {
     if (typeof body.grams_reserved !== 'undefined') allowed.grams_reserved = Number(body.grams_reserved);
     if (typeof body.is_active === 'boolean') allowed.is_active = body.is_active;
 
-    // cost can be provided either as pence or gbp
-    if (typeof body.cost_per_kg_gbp === 'number') allowed.cost_per_kg_gbp = Number(body.cost_per_kg_gbp);
-    else if (typeof body.cost_per_kg_pence === 'number') allowed.cost_per_kg_gbp = Number(body.cost_per_kg_pence) / 100;
+    // cost: prefer storing pence integer; accept either pence or gbp from client
+    if (typeof body.cost_per_kg_pence === 'number') {
+      allowed.cost_per_kg_pence = Number(body.cost_per_kg_pence);
+      // also write derived GBP for compatibility
+      allowed.cost_per_kg_gbp = Number(body.cost_per_kg_pence) / 100;
+    } else if (typeof body.cost_per_kg_gbp === 'number') {
+      const pence = Math.round(Number(body.cost_per_kg_gbp) * 100);
+      allowed.cost_per_kg_pence = pence;
+      allowed.cost_per_kg_gbp = Number(body.cost_per_kg_gbp);
+    }
 
     if (typeof body.density_g_per_cm3 === 'number') allowed.density_g_per_cm3 = Number(body.density_g_per_cm3);
     if (typeof body.support_multiplier === 'number') allowed.support_multiplier = Number(body.support_multiplier);

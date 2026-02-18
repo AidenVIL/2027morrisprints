@@ -94,8 +94,11 @@ export async function POST(req: Request) {
 
     // normalize numeric material properties with fallbacks for older schemas
     const density_g_per_cm3 = Number(itemData?.density_g_per_cm3 ?? itemData?.density_g_cm3 ?? itemData?.density ?? 1.24)
-    const cost_per_kg_gbp = Number(itemData?.cost_per_kg_gbp ?? itemData?.cost_per_kg ?? itemData?.price_per_kg ?? 0)
     const support_multiplier = Number(itemData?.support_multiplier ?? itemData?.supportMultiplier ?? itemData?.support_factor ?? 1.18)
+
+    // prefer pence integer storage; derive GBP for compatibility
+    const costPerKgPence = Number(itemData?.cost_per_kg_pence ?? Math.round((Number(itemData?.cost_per_kg_gbp ?? itemData?.cost_per_kg ?? itemData?.price_per_kg ?? 0) * 100)))
+    const cost_per_kg_gbp = costPerKgPence / 100
 
     const { data: settingsData } = await supabaseAdmin.from('app_settings').select('*').limit(1).maybeSingle()
 
@@ -119,9 +122,10 @@ export async function POST(req: Request) {
     const time = estimateTime({ area_mm2: geom.area_mm2, bbox: { size: { z: geom.bbox.size.z } } }, { V_print_mm3: mass.V_print_mm3, layerHeightMm, supports: Boolean(supports), preset: String(layerPreset || 'standard') as any })
 
     const material = {
-      cost_per_kg_gbp: Number(itemData.cost_per_kg_gbp ?? 0),
-      density_g_per_cm3: Number(itemData.density_g_per_cm3 ?? 1.24),
-      support_multiplier: Number(itemData.support_multiplier ?? 1.18),
+      cost_per_kg_pence: costPerKgPence,
+      cost_per_kg_gbp: cost_per_kg_gbp,
+      density_g_per_cm3: density_g_per_cm3,
+      support_multiplier: support_multiplier,
     }
 
     const pricingSettings = {
@@ -137,7 +141,7 @@ export async function POST(req: Request) {
       small_part_fee_gbp: Number(settingsData?.small_part_fee_gbp ?? 0.5),
     }
 
-    const pricing = estimatePricing(mass.grams, time.timeSeconds, material, pricingSettings)
+    const pricing = estimatePricing(mass.grams, time.timeSeconds, { cost_per_kg_gbp: material.cost_per_kg_gbp, density_g_per_cm3: material.density_g_per_cm3, support_multiplier: material.support_multiplier }, pricingSettings)
 
     // reserve inventory
     const quoteId = crypto.randomUUID()
@@ -165,10 +169,12 @@ export async function POST(req: Request) {
       timeSeconds: time.timeSeconds,
       // price in pence for client consumption
       price_pence: Math.round((pricing?.final ?? 0) * 100),
+      // material cost in pence (raw): grams (g) -> kg factor
+      material_cost_pence: Math.round((mass.grams / 1000) * costPerKgPence),
     };
 
     // return the draft quote id so the client can reference the UNCONFIRMED draft
-    return NextResponse.json({ ok: true, quoteDraftId: quoteId, estimated, breakdown: pricing, geometry: { volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox } })
+    return NextResponse.json({ ok: true, quoteDraftId: quoteId, estimated, breakdown: pricing, material, geometry: { volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox } })
   } catch (e) {
     console.error('get-quote error', e)
     return NextResponse.json({ ok: false, error: 'failed', details: String(e) }, { status: 500 })
