@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
+// SSR-safe noop storage to satisfy TypeScript during server builds.
+const noopStorage: Storage = {
+  length: 0,
+  clear: () => {},
+  getItem: (_: string) => null,
+  key: (_: number) => null,
+  removeItem: (_: string) => {},
+  setItem: (_: string, __: string) => {},
+};
+
 export type CartItem = {
   id: string; // uuid
   createdAt: string;
@@ -24,7 +34,7 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: 'morrisprints_cart_v1',
-      storage: createJSONStorage(() => (typeof window !== 'undefined' ? localStorage : undefined)),
+      storage: createJSONStorage(() => (typeof window !== 'undefined' ? localStorage : noopStorage)),
     }
   )
 );
