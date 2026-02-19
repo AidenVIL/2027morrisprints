@@ -374,20 +374,44 @@ export default function NewQuote() {
           </div>
 
           <div className="mt-4 flex gap-2">
-            <button className="px-3 py-2 border rounded" onClick={()=>{
+            <button className="px-3 py-2 border rounded" onClick={async ()=>{
               if (!quotePreview) return;
               const existing = useCartStore.getState().items.find((it:any) => {
                 return it.quoteSnapshot?.quoteDraftId && quotePreview.quoteDraftId && it.quoteSnapshot.quoteDraftId === quotePreview.quoteDraftId;
               });
               if (existing) {
-                // simple toast replacement
                 try { window.alert('Already in cart'); } catch(e){}
                 return;
               }
-              const id = uuidv4();
-              useCartStore.getState().addItem({ id, createdAt: new Date().toISOString(), quoteSnapshot: quotePreview });
-              try { window.alert('Added to cart'); } catch(e){}
-              // stay on preview
+
+              // ensure a session id exists for guest users
+              let sessionId = null;
+              try { sessionId = localStorage.getItem('morrisprints_session_id'); } catch (e) { sessionId = null }
+              if (!sessionId) {
+                try { sessionId = crypto.randomUUID(); localStorage.setItem('morrisprints_session_id', sessionId); } catch (e) { /* ignore */ }
+              }
+
+              // call server to add to cart
+              try {
+                const token = (await sb?.auth.getSession())?.data?.session?.access_token;
+                const headers: any = { 'Content-Type': 'application/json' };
+                if (sessionId) headers['x-session-id'] = sessionId;
+                if (token) headers.Authorization = `Bearer ${token}`;
+                const res = await fetch('/api/cart/add', { method: 'POST', headers, body: JSON.stringify({ quoteId: quotePreview.quoteDraftId }) });
+                const j = await res.json().catch(()=>null);
+                if (!res.ok) {
+                  console.error('add to cart failed', res.status, j);
+                  try { window.alert('Failed to add to cart'); } catch(e) {}
+                } else {
+                  // update local UI store for immediate feedback
+                  const id = uuidv4();
+                  useCartStore.getState().addItem({ id, createdAt: new Date().toISOString(), quoteSnapshot: quotePreview });
+                  try { window.alert('Added to cart'); } catch(e) {}
+                }
+              } catch (e) {
+                console.error('add to cart error', e);
+                try { window.alert('Failed to add to cart'); } catch(err) {}
+              }
             }}>Add to cart</button>
             <button className="px-3 py-2 bg-indigo-600 text-white rounded" onClick={()=>{
               if (!quotePreview) return;
