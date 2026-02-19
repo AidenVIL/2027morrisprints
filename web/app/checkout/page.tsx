@@ -65,6 +65,11 @@ export default function CheckoutPage(){
   const [deliveryAddress, setDeliveryAddress] = useState<any>(() => {
     try { return JSON.parse(localStorage.getItem('checkout_delivery') || 'null') || { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; } catch(e){ return { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; }
   });
+  const [deliveryManual, setDeliveryManual] = useState<boolean>(() => (localStorage.getItem('checkout_delivery_manual') || 'false') === 'true');
+  const [postcodeSearch, setPostcodeSearch] = useState<string>('');
+  const [addressResults, setAddressResults] = useState<string[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [billingSame, setBillingSame] = useState<boolean>(() => (localStorage.getItem('checkout_billingSame') || 'true') === 'true');
   const [billingAddress, setBillingAddress] = useState<any>(() => {
     try { return JSON.parse(localStorage.getItem('checkout_billing') || 'null') || { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; } catch(e){ return { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; }
@@ -76,6 +81,7 @@ export default function CheckoutPage(){
       localStorage.setItem('checkout_customer', JSON.stringify(customer));
       localStorage.setItem('checkout_deliveryMethod', deliveryMethod);
       localStorage.setItem('checkout_delivery', JSON.stringify(deliveryAddress));
+      localStorage.setItem('checkout_delivery_manual', String(deliveryManual));
       localStorage.setItem('checkout_billingSame', String(billingSame));
       localStorage.setItem('checkout_billing', JSON.stringify(billingAddress));
     } catch (e) {}
@@ -126,31 +132,87 @@ export default function CheckoutPage(){
           </div>
 
           {deliveryMethod === 'delivery' && (
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm block">Address 1*</label>
-                <input value={deliveryAddress.address1} onChange={e => setDeliveryAddress({...deliveryAddress, address1: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
-              </div>
-              <div>
-                <label className="text-sm block">Address 2</label>
-                <input value={deliveryAddress.address2} onChange={e => setDeliveryAddress({...deliveryAddress, address2: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
-              </div>
-              <div>
-                <label className="text-sm block">City*</label>
-                <input value={deliveryAddress.city} onChange={e => setDeliveryAddress({...deliveryAddress, city: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
-              </div>
-              <div>
-                <label className="text-sm block">County</label>
-                <input value={deliveryAddress.county} onChange={e => setDeliveryAddress({...deliveryAddress, county: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
-              </div>
-              <div>
-                <label className="text-sm block">Postcode*</label>
-                <input value={deliveryAddress.postcode} onChange={e => setDeliveryAddress({...deliveryAddress, postcode: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
-              </div>
-              <div>
-                <label className="text-sm block">Country</label>
-                <input value={deliveryAddress.country} onChange={e => setDeliveryAddress({...deliveryAddress, country: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
-              </div>
+            <div className="mt-3">
+              {!deliveryManual && (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input placeholder="Postcode" value={postcodeSearch} onChange={e=>setPostcodeSearch(e.target.value)} className="w-48 border rounded px-2 py-1" />
+                    <button onClick={async ()=>{
+                      const postcode = (postcodeSearch||'').trim();
+                      if (!postcode) { setSearchMessage('Enter a postcode to search'); return; }
+                      setSearchLoading(true); setSearchMessage(null); setAddressResults([]);
+                      try {
+                        const res = await fetch(`/api/address-lookup?postcode=${encodeURIComponent(postcode)}`);
+                        const j = await res.json().catch(()=>[]);
+                        if (Array.isArray(j) && j.length>0) {
+                          setAddressResults(j as string[]);
+                          setSearchMessage(null);
+                        } else {
+                          // no results — switch to manual and show message
+                          setDeliveryManual(true);
+                          setSearchMessage('No addresses found — enter manually');
+                        }
+                      } catch (e) {
+                        console.error('address search failed', e);
+                        setSearchMessage('Address lookup failed — enter manually');
+                        setDeliveryManual(true);
+                      } finally { setSearchLoading(false); }
+                    }} className="px-3 py-1 bg-gray-200 border rounded">Search</button>
+                    <button onClick={()=>{ setDeliveryManual(true); setSearchMessage(null); }} className="px-3 py-1 border rounded">Enter manually</button>
+                  </div>
+                  {searchLoading && <div className="text-sm text-gray-600">Searching…</div>}
+                  {searchMessage && <div className="text-sm text-red-600">{searchMessage}</div>}
+                  {addressResults.length>0 && (
+                    <div className="mt-2">
+                      <label className="text-sm block">Select address</label>
+                      <select onChange={e=>{
+                        const raw = e.target.value;
+                        if (!raw) return;
+                        // naive provider-agnostic parsing: split on comma
+                        const parts = raw.split(',').map((p:string)=>p.trim()).filter(Boolean);
+                        const addr1 = parts[0] || '';
+                        const addr2 = parts.length>2 ? parts.slice(1, parts.length-2).join(', ') : (parts[1] || '');
+                        const city = parts.length>1 ? parts[parts.length-2] : '';
+                        const postcode = parts.length>0 ? parts[parts.length-1] : '';
+                        setDeliveryAddress({ address1: addr1, address2: addr2, city: city, county: '', postcode, country: 'UK' });
+                        setDeliveryManual(true);
+                      }} className="mt-1 w-full border rounded px-2 py-1">
+                        <option value="">-- choose an address --</option>
+                        {addressResults.map((a, i)=> <option key={i} value={a}>{a}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {deliveryManual && (
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm block">Address 1*</label>
+                    <input value={deliveryAddress.address1} onChange={e => setDeliveryAddress({...deliveryAddress, address1: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                  </div>
+                  <div>
+                    <label className="text-sm block">Address 2</label>
+                    <input value={deliveryAddress.address2} onChange={e => setDeliveryAddress({...deliveryAddress, address2: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                  </div>
+                  <div>
+                    <label className="text-sm block">City*</label>
+                    <input value={deliveryAddress.city} onChange={e => setDeliveryAddress({...deliveryAddress, city: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                  </div>
+                  <div>
+                    <label className="text-sm block">County</label>
+                    <input value={deliveryAddress.county} onChange={e => setDeliveryAddress({...deliveryAddress, county: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                  </div>
+                  <div>
+                    <label className="text-sm block">Postcode*</label>
+                    <input value={deliveryAddress.postcode} onChange={e => setDeliveryAddress({...deliveryAddress, postcode: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                  </div>
+                  <div>
+                    <label className="text-sm block">Country</label>
+                    <input value={deliveryAddress.country} onChange={e => setDeliveryAddress({...deliveryAddress, country: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
