@@ -2,10 +2,11 @@
 import React from 'react';
 import { useCartStore } from '../../lib/cart/store';
 import Link from 'next/link';
+import { parsePriceToPence } from '../../lib/formatPrice';
 
 export default function CheckoutPage(){
   const items = useCartStore(s => s.items);
-  const subtotal = (items || []).reduce((s, it) => s + (Number(it.quoteSnapshot?.finalPrice || 0)), 0);
+  const subtotal = (items || []).reduce((s, it) => s + parsePriceToPence(it.quoteSnapshot?.finalPrice), 0);
 
   function handlePay(){
     if (!items || items.length === 0) {
@@ -35,7 +36,7 @@ export default function CheckoutPage(){
               <div className="text-sm text-gray-600">{it.quoteSnapshot?.layerPreset} • Infill {it.quoteSnapshot?.infillPercent}% • {it.quoteSnapshot?.supports ? 'Supports' : 'No supports'} • Qty {it.quoteSnapshot?.quantity}</div>
             </div>
             <div className="text-right">
-              <div className="text-lg">£{((Number(it.quoteSnapshot?.finalPrice || 0))/100).toFixed(2)}</div>
+              <div className="text-lg">£{(parsePriceToPence(it.quoteSnapshot?.finalPrice)/100).toFixed(2)}</div>
               <div className="text-sm">{it.quoteSnapshot?.grams} g</div>
             </div>
           </div>

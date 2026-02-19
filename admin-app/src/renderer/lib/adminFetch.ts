@@ -32,10 +32,12 @@ export async function adminFetch(path: string, options?: RequestInit) {
   }
 
   if (!res.ok) {
-    const msg = (data && (data.message || data.error)) || res.statusText || `HTTP ${res.status}`;
-    const err: any = new Error(msg);
+    const short = (data && (data.message || data.error)) || res.statusText || `HTTP ${res.status}`;
+    const full = data ? JSON.stringify(data) : text || res.statusText || `HTTP ${res.status}`;
+    const err: any = new Error(`${res.status} ${short} ${full}`);
     err.status = res.status;
     err.body = data;
+    console.error('adminFetch error', { url, status: res.status, body: data, text });
     throw err;
   }
 

@@ -12,7 +12,11 @@ export async function GET(req: Request) {
     const supabase = ensureSupabaseAdmin();
     const { data, error } = await supabase.from('inventory_items').select('*').order('material', { ascending: true }).order('colour', { ascending: true });
     if (error) throw error;
-    return NextResponse.json(data || []);
+    const items = (data || []).map((it: any) => ({
+      ...it,
+      cost_per_kg_gbp: (Number(it.cost_per_kg_pence ?? 0) / 100),
+    }));
+    return NextResponse.json(items);
   } catch (e: any) {
     console.error('admin inventory list error', e);
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });

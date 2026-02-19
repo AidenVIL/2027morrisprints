@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { supabase } from '../../../lib/supabaseBrowser';
+import { parsePriceToPence } from '../../../lib/formatPrice';
 import AuthCard from '../../../components/AuthCard';
 import ModelDropzone from '../../../components/ModelDropzone';
 import { useRouter } from 'next/navigation';
@@ -158,7 +159,7 @@ export default function NewQuote() {
       grams: Number(gqJson.estimated?.grams || 0),
       timeSeconds: Number(gqJson.estimated?.timeSeconds || 0),
       breakdown: gqJson.breakdown || {},
-      finalPrice: Number(gqJson.estimated?.price_pence || gqJson.estimated?.price || 0),
+      finalPrice: parsePriceToPence(gqJson.estimated?.price_pence ?? gqJson.estimated?.price ?? 0),
       inventory_item_id: inventory_item_id,
       layerPreset: payload.layerPreset,
       infillPercent: Number(payload.infillPercent || 0),

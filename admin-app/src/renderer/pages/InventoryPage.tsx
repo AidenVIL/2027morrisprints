@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Heading,
   Table,
@@ -33,6 +33,7 @@ import {
   IconButton,
 } from '@chakra-ui/react';
 import PageContainer from '../components/PageContainer';
+import InventoryItemForm, { InventoryItem } from '../components/InventoryItemForm';
 import { adminFetch } from '../lib/adminFetch';
 import { Plus, History } from 'lucide-react';
 
@@ -59,13 +60,11 @@ export default function InventoryPage() {
 
   const { isOpen, onOpen, onClose } = useDisclosure();
   const addDisclosure = useDisclosure();
+  const addFormRef = useRef<any>(null);
   const [selected, setSelected] = useState<Item | null>(null);
   const [movements, setMovements] = useState<any[]>([]);
 
-  const [newMaterial, setNewMaterial] = useState('');
-  const [newColour, setNewColour] = useState('');
-  const [newGrams, setNewGrams] = useState<number>(0);
-  const [newCost, setNewCost] = useState<number>(0);
+  // Add modal state handled via InventoryItemForm
 
   async function load() {
     setLoading(true);
@@ -113,22 +112,10 @@ export default function InventoryPage() {
   // Edit flow
   const editDisclosure = useDisclosure();
   const [editItem, setEditItem] = useState<Item | null>(null);
-  const [editGramsAvailable, setEditGramsAvailable] = useState<number>(0);
-  const [editGramsReserved, setEditGramsReserved] = useState<number>(0);
-  const [editCost, setEditCost] = useState<number>(0);
-  const [editDensity, setEditDensity] = useState<number | undefined>(undefined);
-  const [editSupportMultiplier, setEditSupportMultiplier] = useState<number | undefined>(undefined);
+  const editFormRef = useRef<any>(null);
 
   function openEdit(it: Item) {
     setEditItem(it);
-    setEditGramsAvailable(it.grams_available || 0);
-    setEditGramsReserved(it.grams_reserved || 0);
-    // load cost as GBP decimal for the form (prefer pence if present)
-    const pence = typeof it.cost_per_kg_pence === 'number' ? it.cost_per_kg_pence : (typeof it.cost_per_kg_gbp === 'number' ? Math.round(it.cost_per_kg_gbp * 100) : 0);
-    setEditCost((pence / 100) || 0);
-    // read density/support if present on payload
-    setEditDensity(it.density_g_per_cm3 ?? undefined);
-    setEditSupportMultiplier(it.support_multiplier ?? undefined);
     editDisclosure.onOpen();
   }
 
@@ -237,90 +224,50 @@ export default function InventoryPage() {
           <ModalCloseButton />
           <ModalBody>
             {editItem && (
-              <Stack spacing={3}>
-                <FormControl>
-                  <FormLabel>Material</FormLabel>
-                  <Input value={editItem.material} onChange={(e) => setEditItem({...editItem, material: e.target.value})} />
-                </FormControl>
+              <InventoryItemForm
+                ref={editFormRef}
+                mode="edit"
+                initialValue={{
+                  id: editItem.id,
+                  material: editItem.material,
+                  colour: editItem.colour,
+                  is_active: editItem.is_active,
+                  grams_available_g: editItem.grams_available,
+                  grams_reserved_g: editItem.grams_reserved,
+                  cost_per_kg_pence: editItem.cost_per_kg_pence,
+                  density_g_per_cm3: editItem.density_g_per_cm3 ?? (editItem as any).density,
+                  support_multiplier: editItem.support_multiplier ?? (editItem as any).supportMultiplier,
+                }}
+                onSubmit={async (values) => {
+                  try {
+                    const payload: any = {
+                      item_id: editItem.id,
+                      material: values.material,
+                      colour: values.colour,
+                      is_active: !!values.is_active,
+                      grams_available: Number(values.grams_available_g || 0),
+                      grams_reserved: Number(values.grams_reserved_g || 0),
+                      cost_per_kg_pence: Number(values.cost_per_kg_pence || 0),
+                    };
+                    if (typeof values.density_g_per_cm3 === 'number') payload.density_g_per_cm3 = Number(values.density_g_per_cm3);
+                    if (typeof values.support_multiplier === 'number') payload.support_multiplier = Number(values.support_multiplier);
 
-                <FormControl>
-                  <FormLabel>Colour</FormLabel>
-                  <Input value={editItem.colour} onChange={(e) => setEditItem({...editItem, colour: e.target.value})} />
-                </FormControl>
-
-                <FormControl display="flex" alignItems="center">
-                  <FormLabel mb={0}>Active</FormLabel>
-                  <Switch isChecked={!!editItem.is_active} onChange={(e) => setEditItem({...editItem, is_active: e.target.checked})} />
-                </FormControl>
-
-                <FormControl>
-                  <FormLabel>Grams available (g)</FormLabel>
-                  <NumberInput value={editGramsAvailable} min={0} onChange={(v) => setEditGramsAvailable(Number(v))}>
-                    <NumberInputField />
-                  </NumberInput>
-                </FormControl>
-
-                <FormControl>
-                  <FormLabel>Grams reserved (g)</FormLabel>
-                  <NumberInput value={editGramsReserved} min={0} onChange={(v) => setEditGramsReserved(Number(v))}>
-                    <NumberInputField />
-                  </NumberInput>
-                </FormControl>
-
-                <FormControl>
-                  <FormLabel>Cost per KG (£)</FormLabel>
-                  <NumberInput value={editCost} min={0} max={200} step={0.01} onChange={(v) => setEditCost(Number(v))}>
-                    <NumberInputField />
-                  </NumberInput>
-                </FormControl>
-
-                <FormControl>
-                  <FormLabel>Density (g/cm³)</FormLabel>
-                  <NumberInput value={editDensity ?? 1.24} min={0.1} step={0.01} onChange={(v) => setEditDensity(Number(v))}>
-                    <NumberInputField />
-                  </NumberInput>
-                </FormControl>
-
-                <FormControl>
-                  <FormLabel>Support multiplier</FormLabel>
-                  <NumberInput value={editSupportMultiplier ?? 1.18} min={0.5} step={0.01} onChange={(v) => setEditSupportMultiplier(Number(v))}>
-                    <NumberInputField />
-                  </NumberInput>
-                </FormControl>
-              </Stack>
+                    await adminFetch('/api/admin/inventory/update', { method: 'POST', body: JSON.stringify(payload) });
+                    toast({ title: 'Saved', status: 'success' });
+                    editDisclosure.onClose();
+                    load();
+                  } catch (e: any) {
+                    const body = e?.body ? JSON.stringify(e.body) : undefined;
+                    toast({ title: 'Failed to save', description: body || e.message || String(e), status: 'error' });
+                    console.error('save inventory error', e);
+                  }
+                }}
+              />
             )}
           </ModalBody>
           <ModalFooter>
             <Button variant="ghost" mr={3} onClick={editDisclosure.onClose}>Cancel</Button>
-            <Button colorScheme="blue" onClick={async () => {
-              if (!editItem) return;
-              // validation
-              if (editCost < 0 || editCost > 200) {
-                toast({ title: 'Invalid cost', description: 'Cost must be between 0 and 200', status: 'warning' });
-                return;
-              }
-              try {
-                const payload: any = {
-                  item_id: editItem.id,
-                  material: editItem.material,
-                  colour: editItem.colour,
-                  is_active: !!editItem.is_active,
-                  grams_available: Number(editGramsAvailable || 0),
-                  grams_reserved: Number(editGramsReserved || 0),
-                  // store as pence integer
-                  cost_per_kg_pence: Math.round(Number(editCost || 0) * 100),
-                };
-                if (typeof editDensity === 'number') payload.density_g_per_cm3 = Number(editDensity);
-                if (typeof editSupportMultiplier === 'number') payload.support_multiplier = Number(editSupportMultiplier);
-
-                await adminFetch('/api/admin/inventory/update', { method: 'POST', body: JSON.stringify(payload) });
-                toast({ title: 'Saved', status: 'success' });
-                editDisclosure.onClose();
-                load();
-              } catch (e: any) {
-                toast({ title: 'Failed to save', description: e.message || String(e), status: 'error' });
-              }
-            }}>Save</Button>
+            <Button colorScheme="blue" onClick={() => editFormRef.current?.submit()}>Save</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
@@ -332,62 +279,42 @@ export default function InventoryPage() {
           <ModalHeader>Add Inventory Item</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
-            <Stack spacing={3}>
-              <FormControl>
-                <FormLabel>Material</FormLabel>
-                <Input placeholder="e.g. PLA" value={newMaterial} onChange={(e) => setNewMaterial(e.target.value)} />
-              </FormControl>
+            <InventoryItemForm
+              ref={addFormRef}
+              mode="create"
+              initialValue={{ is_active: true, grams_available_g: 0, grams_reserved_g: 0 }}
+              onSubmit={async (values) => {
+                if (!values.material || !values.colour) {
+                  toast({ title: 'Missing fields', description: 'Material and colour are required', status: 'warning' });
+                  return;
+                }
+                try {
+                  const payload: any = {
+                    material: values.material,
+                    colour: values.colour,
+                    grams_available: Number(values.grams_available_g || 0),
+                    grams_reserved: Number(values.grams_reserved_g || 0),
+                    cost_per_kg_pence: Number(values.cost_per_kg_pence || 0),
+                    is_active: !!values.is_active,
+                  };
+                  if (typeof values.density_g_per_cm3 === 'number') payload.density_g_per_cm3 = Number(values.density_g_per_cm3);
+                  if (typeof values.support_multiplier === 'number') payload.support_multiplier = Number(values.support_multiplier);
 
-              <FormControl>
-                <FormLabel>Colour</FormLabel>
-                <Input placeholder="e.g. White" value={newColour} onChange={(e) => setNewColour(e.target.value)} />
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>Grams available (g)</FormLabel>
-                <InputGroup>
-                  <NumberInput value={newGrams} min={0} onChange={(v) => setNewGrams(Number(v))}>
-                    <NumberInputField placeholder="e.g. 1000" />
-                  </NumberInput>
-                  <InputRightElement pointerEvents="none">g</InputRightElement>
-                </InputGroup>
-              </FormControl>
-
-              <FormControl>
-                <FormLabel>Cost per KG (£)</FormLabel>
-                <InputGroup>
-                  <InputLeftElement pointerEvents="none">£</InputLeftElement>
-                  <NumberInput value={newCost} min={0} step={0.01} onChange={(v) => setNewCost(Number(v))}>
-                    <NumberInputField placeholder="e.g. 15.00" />
-                  </NumberInput>
-                </InputGroup>
-              </FormControl>
-            </Stack>
+                  await adminFetch('/api/admin/inventory/create', { method: 'POST', body: JSON.stringify(payload) });
+                  toast({ title: 'Created', status: 'success' });
+                  addDisclosure.onClose();
+                  load();
+                } catch (e: any) {
+                  const body = e?.body ? JSON.stringify(e.body) : undefined;
+                  toast({ title: 'Failed', description: body || e.message || String(e), status: 'error' });
+                  console.error('create inventory error', e);
+                }
+              }}
+            />
           </ModalBody>
           <ModalFooter>
             <Button variant="ghost" mr={3} onClick={addDisclosure.onClose}>Cancel</Button>
-            <Button colorScheme="green" onClick={async () => {
-              if (!newMaterial.trim() || !newColour.trim()) {
-                toast({ title: 'Missing fields', description: 'Material and colour are required', status: 'warning' });
-                return;
-              }
-              const grams = Number(newGrams || 0);
-              // validate cost range
-              if (newCost < 0 || newCost > 200) {
-                toast({ title: 'Invalid cost', description: 'Cost must be between 0 and 200', status: 'warning' });
-                return;
-              }
-              const costPence = Math.round(Number(newCost || 0) * 100);
-              try {
-                await adminFetch('/api/admin/inventory/create', { method: 'POST', body: JSON.stringify({ material: newMaterial.trim(), colour: newColour.trim(), grams_available: grams, cost_per_kg_pence: costPence }) });
-                toast({ title: 'Created', status: 'success' });
-                addDisclosure.onClose();
-                setNewMaterial(''); setNewColour(''); setNewGrams(0); setNewCost(0);
-                load();
-              } catch (e: any) {
-                toast({ title: 'Failed', description: e.message || String(e), status: 'error' });
-              }
-            }}>Create</Button>
+            <Button colorScheme="green" onClick={() => addFormRef.current?.submit()}>Create</Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

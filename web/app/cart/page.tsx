@@ -1,12 +1,13 @@
 "use client";
 import { useEffect } from 'react';
 import { useCartStore } from '../../lib/cart/store';
+import { parsePriceToPence } from '../../lib/formatPrice';
 
 export default function CartPage(){
   const items = useCartStore(s => s.items);
   const remove = useCartStore(s => s.removeItem);
 
-  const subtotal = (items || []).reduce((s, it) => s + (Number(it.quoteSnapshot?.finalPrice || 0)), 0);
+  const subtotal = (items || []).reduce((s, it) => s + parsePriceToPence(it.quoteSnapshot?.finalPrice), 0);
 
   if (!items || items.length === 0) return <div className="p-6">Your cart is empty. Get a quote first.</div>;
 
@@ -22,7 +23,7 @@ export default function CartPage(){
               <div className="text-sm text-gray-600">{it.quoteSnapshot?.layerPreset} • Infill {it.quoteSnapshot?.infillPercent}% • {it.quoteSnapshot?.supports ? 'Supports' : 'No supports'} • Qty {it.quoteSnapshot?.quantity}</div>
             </div>
             <div className="text-right">
-              <div className="text-lg">£{((Number(it.quoteSnapshot?.finalPrice || 0))/100).toFixed(2)}</div>
+              <div className="text-lg">£{(parsePriceToPence(it.quoteSnapshot?.finalPrice)/100).toFixed(2)}</div>
               <div className="text-sm">{it.quoteSnapshot?.grams} g • {(Math.floor((it.quoteSnapshot?.timeSeconds||0)/3600)).toString().padStart(2,'0')}:{(Math.floor(((it.quoteSnapshot?.timeSeconds||0)%3600)/60)).toString().padStart(2,'0')}</div>
               <div className="mt-3 flex gap-2 justify-end">
                 <a href={`/quotes/new?draft=${it.id}`} className="px-3 py-1 border rounded">Edit</a>
