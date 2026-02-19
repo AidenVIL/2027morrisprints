@@ -28,7 +28,7 @@ export default function CartPage(){
 
   const items = serverCart?.items && serverCart.items.length > 0 ? serverCart.items.map((it:any) => ({ id: it.id, createdAt: it.created_at, quoteSnapshot: it.quotes })) : localItems;
 
-  const subtotal = (items || []).reduce((s, it) => s + parsePriceToPence(it.quoteSnapshot?.finalPrice || it.quoteSnapshot?.price_pence || 0), 0);
+  const subtotal = (items || []).reduce((s: number, it: any) => s + parsePriceToPence(it.quoteSnapshot?.finalPrice || it.quoteSnapshot?.price_pence || 0), 0);
 
   if (!items || items.length === 0) return <div className="p-6">Your cart is empty. Get a quote first.</div>;
 
