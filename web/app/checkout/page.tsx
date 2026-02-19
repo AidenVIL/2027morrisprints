@@ -57,23 +57,40 @@ export default function CheckoutPage(){
   const [cartId, setCartId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Step 1 form state
-  const [customer, setCustomer] = useState<any>(() => {
-    try { return JSON.parse(localStorage.getItem('checkout_customer') || 'null') || { email: '', firstName: '', lastName: '', phone: '' }; } catch(e){ return { email: '', firstName: '', lastName: '', phone: '' }; }
-  });
-  const [deliveryMethod, setDeliveryMethod] = useState<string>(() => localStorage.getItem('checkout_deliveryMethod') || 'collection');
-  const [deliveryAddress, setDeliveryAddress] = useState<any>(() => {
-    try { return JSON.parse(localStorage.getItem('checkout_delivery') || 'null') || { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; } catch(e){ return { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; }
-  });
-  const [deliveryManual, setDeliveryManual] = useState<boolean>(() => (localStorage.getItem('checkout_delivery_manual') || 'false') === 'true');
+  const initialCustomer = (() => {
+    try {
+      if (typeof window === 'undefined') return { email: '', firstName: '', lastName: '', phone: '' };
+      return JSON.parse(localStorage.getItem('checkout_customer') || 'null') || { email: '', firstName: '', lastName: '', phone: '' };
+    } catch (e) { return { email: '', firstName: '', lastName: '', phone: '' }; }
+  })();
+  const [customer, setCustomer] = useState(initialCustomer);
+
+  const initialDeliveryMethod = typeof window !== 'undefined' ? localStorage.getItem('checkout_deliveryMethod') || 'collection' : 'collection';
+  const [deliveryMethod, setDeliveryMethod] = useState<string>(initialDeliveryMethod);
+
+  const initialDeliveryAddress = (() => {
+    try {
+      if (typeof window === 'undefined') return { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' };
+      return JSON.parse(localStorage.getItem('checkout_delivery') || 'null') || { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' };
+    } catch (e) { return { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; }
+  })();
+  const [deliveryAddress, setDeliveryAddress] = useState<any>(initialDeliveryAddress);
+
+  const initialDeliveryManual = typeof window !== 'undefined' ? (localStorage.getItem('checkout_delivery_manual') || 'false') === 'true' : false;
+  const [deliveryManual, setDeliveryManual] = useState<boolean>(initialDeliveryManual);
   const [postcodeSearch, setPostcodeSearch] = useState<string>('');
   const [addressResults, setAddressResults] = useState<string[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
-  const [billingSame, setBillingSame] = useState<boolean>(() => (localStorage.getItem('checkout_billingSame') || 'true') === 'true');
-  const [billingAddress, setBillingAddress] = useState<any>(() => {
-    try { return JSON.parse(localStorage.getItem('checkout_billing') || 'null') || { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; } catch(e){ return { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; }
-  });
+  const initialBillingSame = typeof window !== 'undefined' ? (localStorage.getItem('checkout_billingSame') || 'true') === 'true' : true;
+  const [billingSame, setBillingSame] = useState<boolean>(initialBillingSame);
+  const initialBillingAddress = (() => {
+    try {
+      if (typeof window === 'undefined') return { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' };
+      return JSON.parse(localStorage.getItem('checkout_billing') || 'null') || { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' };
+    } catch (e) { return { address1:'', address2:'', city:'', county:'', postcode:'', country:'UK' }; }
+  })();
+  const [billingAddress, setBillingAddress] = useState<any>(initialBillingAddress);
 
   useEffect(() => {
     // persist step1 state to localStorage
@@ -107,19 +124,19 @@ export default function CheckoutPage(){
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="text-sm block">Email*</label>
-              <input value={customer.email} onChange={e => setCustomer({...customer, email: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+              <input value={customer.email} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomer({...customer, email: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
             </div>
             <div>
               <label className="text-sm block">Phone</label>
-              <input value={customer.phone} onChange={e => setCustomer({...customer, phone: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+              <input value={customer.phone} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomer({...customer, phone: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
             </div>
             <div>
               <label className="text-sm block">First name*</label>
-              <input value={customer.firstName} onChange={e => setCustomer({...customer, firstName: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+              <input value={customer.firstName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomer({...customer, firstName: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
             </div>
             <div>
               <label className="text-sm block">Last name*</label>
-              <input value={customer.lastName} onChange={e => setCustomer({...customer, lastName: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+              <input value={customer.lastName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomer({...customer, lastName: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
             </div>
           </div>
 
@@ -178,7 +195,7 @@ export default function CheckoutPage(){
                         setDeliveryManual(true);
                       }} className="mt-1 w-full border rounded px-2 py-1">
                         <option value="">-- choose an address --</option>
-                        {addressResults.map((a, i)=> <option key={i} value={a}>{a}</option>)}
+                        {addressResults.map((a: string, i: number)=> <option key={i} value={a}>{a}</option>)}
                       </select>
                     </div>
                   )}
@@ -189,27 +206,27 @@ export default function CheckoutPage(){
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="text-sm block">Address 1*</label>
-                    <input value={deliveryAddress.address1} onChange={e => setDeliveryAddress({...deliveryAddress, address1: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                    <input value={deliveryAddress.address1} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeliveryAddress({...deliveryAddress, address1: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
                   </div>
                   <div>
                     <label className="text-sm block">Address 2</label>
-                    <input value={deliveryAddress.address2} onChange={e => setDeliveryAddress({...deliveryAddress, address2: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                    <input value={deliveryAddress.address2} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeliveryAddress({...deliveryAddress, address2: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
                   </div>
                   <div>
                     <label className="text-sm block">City*</label>
-                    <input value={deliveryAddress.city} onChange={e => setDeliveryAddress({...deliveryAddress, city: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                    <input value={deliveryAddress.city} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeliveryAddress({...deliveryAddress, city: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
                   </div>
                   <div>
                     <label className="text-sm block">County</label>
-                    <input value={deliveryAddress.county} onChange={e => setDeliveryAddress({...deliveryAddress, county: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                    <input value={deliveryAddress.county} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeliveryAddress({...deliveryAddress, county: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
                   </div>
                   <div>
                     <label className="text-sm block">Postcode*</label>
-                    <input value={deliveryAddress.postcode} onChange={e => setDeliveryAddress({...deliveryAddress, postcode: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                    <input value={deliveryAddress.postcode} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeliveryAddress({...deliveryAddress, postcode: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
                   </div>
                   <div>
                     <label className="text-sm block">Country</label>
-                    <input value={deliveryAddress.country} onChange={e => setDeliveryAddress({...deliveryAddress, country: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                    <input value={deliveryAddress.country} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDeliveryAddress({...deliveryAddress, country: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
                   </div>
                 </div>
               )}
@@ -217,34 +234,34 @@ export default function CheckoutPage(){
           )}
 
           <div className="mt-4">
-            <label className="inline-flex items-center"><input type="checkbox" checked={billingSame} onChange={e => setBillingSame(e.target.checked)} /> <span className="ml-2">Billing same as delivery</span></label>
+            <label className="inline-flex items-center"><input type="checkbox" checked={billingSame} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBillingSame(e.target.checked)} /> <span className="ml-2">Billing same as delivery</span></label>
           </div>
 
           {!billingSame && (
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="text-sm block">Billing address 1*</label>
-                <input value={billingAddress.address1} onChange={e => setBillingAddress({...billingAddress, address1: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                <input value={billingAddress.address1} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBillingAddress({...billingAddress, address1: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
               </div>
               <div>
                 <label className="text-sm block">Billing address 2</label>
-                <input value={billingAddress.address2} onChange={e => setBillingAddress({...billingAddress, address2: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                <input value={billingAddress.address2} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBillingAddress({...billingAddress, address2: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
               </div>
               <div>
                 <label className="text-sm block">Billing city*</label>
-                <input value={billingAddress.city} onChange={e => setBillingAddress({...billingAddress, city: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                <input value={billingAddress.city} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBillingAddress({...billingAddress, city: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
               </div>
               <div>
                 <label className="text-sm block">Billing county</label>
-                <input value={billingAddress.county} onChange={e => setBillingAddress({...billingAddress, county: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                <input value={billingAddress.county} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBillingAddress({...billingAddress, county: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
               </div>
               <div>
                 <label className="text-sm block">Billing postcode*</label>
-                <input value={billingAddress.postcode} onChange={e => setBillingAddress({...billingAddress, postcode: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                <input value={billingAddress.postcode} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBillingAddress({...billingAddress, postcode: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
               </div>
               <div>
                 <label className="text-sm block">Country</label>
-                <input value={billingAddress.country} onChange={e => setBillingAddress({...billingAddress, country: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
+                <input value={billingAddress.country} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBillingAddress({...billingAddress, country: e.target.value})} className="mt-1 w-full border rounded px-2 py-1" />
               </div>
             </div>
           )}
