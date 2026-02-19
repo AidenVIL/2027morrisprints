@@ -148,33 +148,86 @@ export async function POST(req: Request) {
     const qty = Number(quantity ?? 1)
     await supabaseAdmin.rpc('reserve_inventory', { p_item_id: inventory_item_id, p_grams: Math.ceil(mass.grams * qty), p_quote_id: quoteId })
 
-    // insert draft row
-    await supabaseAdmin.from('quote_requests').insert({
-      id: quoteId,
-      user_id: user.id,
-      status: 'UNCONFIRMED',
-      file_path: path,
-      file_original_name: originalName || path.split('/').slice(-1)[0],
-      settings: massSettings,
-      quantity: qty,
-      inventory_item_id,
-      estimated_grams: Math.ceil(mass.grams * qty),
-      estimated_print_time_seconds: Math.ceil(time.timeSeconds * qty),
-      reserved_grams: Math.ceil(mass.grams * qty),
-      estimated_price_pence: Math.round(pricing.final * 100),
-    })
+    // insert into persistent quotes table
+    const price_material_pence = Math.round((pricing.materialCharge ?? 0) * 100)
+    const price_machine_pence = Math.round((pricing.machineCharge ?? 0) * 100)
+    const price_electricity_pence = Math.round((pricing.electricityCharge ?? 0) * 100)
+    const price_labour_pence = Math.round((pricing.labourCharge ?? 0) * 100)
+    const extrasTotal = (pricing.extras?.minOrderFee || 0) + (pricing.extras?.supportsFee || 0) + (pricing.extras?.smallPartFee || 0)
+    const price_extras_pence = Math.round(extrasTotal * 100)
+    const price_total_pence = Math.round((pricing.final ?? 0) * 100)
+
+    try {
+      await supabaseAdmin.from('quotes').insert({
+        id: quoteId,
+        customer_id: user.id || null,
+        customer_email: user.email || null,
+        inventory_item_id: inventory_item_id || null,
+        material: itemData?.material ?? body?.material ?? null,
+        layer_preset: layerPreset || null,
+        infill_percent: Number(infillPercent ?? 0),
+        supports: Boolean(supports),
+        quantity: qty,
+        storage_path: path,
+        original_name: originalName || path.split('/').slice(-1)[0],
+        grams_est: Math.ceil(mass.grams * qty),
+        time_seconds_est: Math.ceil(time.timeSeconds * qty),
+        price_material_pence,
+        price_machine_pence,
+        price_electricity_pence,
+        price_labour_pence,
+        price_extras_pence,
+        price_total_pence,
+        status: 'estimated',
+        currency: 'gbp'
+      })
+    } catch (e) {
+      console.error('failed inserting quote row', e)
+    }
 
     const estimated = {
       grams: mass.grams,
       timeSeconds: time.timeSeconds,
       // price in pence for client consumption
-      price_pence: Math.round((pricing?.final ?? 0) * 100),
+      price_pence: price_total_pence,
       // material cost in pence (raw): grams (g) -> kg factor
       material_cost_pence: Math.round((mass.grams / 1000) * costPerKgPence),
     };
 
-    // return the draft quote id so the client can reference the UNCONFIRMED draft
-    return NextResponse.json({ ok: true, quoteDraftId: quoteId, estimated, breakdown: pricing, material, geometry: { volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox } })
+    // attempt to notify admin via Resend (optional)
+    let warn: string | undefined = undefined
+    try {
+      const RESEND_API_KEY = process.env.RESEND_API_KEY
+      const ADMIN_EMAIL = process.env.ADMIN_EMAIL
+      const RESEND_FROM = process.env.RESEND_FROM || `no-reply@${(process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').replace(/^https?:\/\//,'')}`
+      if (RESEND_API_KEY && ADMIN_EMAIL) {
+        const bodyText = `Quote ${quoteId}\nTime: ${new Date().toISOString()}\n\nInputs:\ninventory_item_id: ${inventory_item_id}\nmaterial: ${itemData?.material ?? body?.material}\nlayerPreset: ${layerPreset}\ninfillPercent: ${infillPercent}\nsupports: ${supports}\nquantity: ${qty}\nfile: ${path}\noriginalName: ${originalName || ''}\n\nEstimated grams: ${Math.ceil(mass.grams * qty)}\nEstimated time (s): ${Math.ceil(time.timeSeconds * qty)}\n\nBreakdown: ${JSON.stringify(pricing, null, 2)}\n\nTotal (GBP): £${((price_total_pence||0)/100).toFixed(2)}\n`
+        const resendPayload = {
+          from: RESEND_FROM,
+          to: [ADMIN_EMAIL],
+          subject: `New quote ${quoteId} — estimated £${((price_total_pence||0)/100).toFixed(2)}`,
+          text: bodyText,
+        }
+
+        const resp = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${RESEND_API_KEY}` },
+          body: JSON.stringify(resendPayload)
+        })
+        if (!resp.ok) {
+          console.warn('resend email failed', await resp.text())
+          warn = 'email_failed'
+        }
+      } else {
+        console.info('Resend or ADMIN_EMAIL not configured; skipping admin notification')
+      }
+    } catch (e) {
+      console.error('email send failed', e)
+      warn = 'email_failed'
+    }
+
+    // return the draft quote id so the client can reference the estimate
+    return NextResponse.json({ ok: true, quoteId, quoteDraftId: quoteId, estimated, breakdown: pricing, material, geometry: { volume_mm3: geom.volume_mm3, area_mm2: geom.area_mm2, bbox: geom.bbox }, totals: { price_total_pence, price_material_pence, price_machine_pence, price_electricity_pence, price_labour_pence, price_extras_pence }, warn })
   } catch (e) {
     console.error('get-quote error', e)
     return NextResponse.json({ ok: false, error: 'failed', details: String(e) }, { status: 500 })
