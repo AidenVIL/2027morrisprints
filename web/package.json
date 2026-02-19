@@ -17,6 +17,8 @@
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.45.1",
     "stripe": "^12.18.0",
+    "@stripe/react-stripe-js": "^2.1.0",
+    "@stripe/stripe-js": "^2.0.0",
     "uuid": "^13.0.0",
     "zod": "^3.25.76",
     "zustand": "^4.5.7"
