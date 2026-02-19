@@ -33,10 +33,11 @@ export async function POST(req: Request) {
 
     const supabase = ensureSupabaseAdmin();
 
-    // try update; if the DB schema is missing optional columns, retry without them
-    const optionalCols = ['density_g_per_cm3', 'support_multiplier'];
+    // try update; if the DB schema is missing optional columns, detect missing column names from the error
+    // and retry without them. Be defensive and strip any quoted column names found in the error message.
     let attempt = 0;
-    while (true) {
+    const maxAttempts = 5;
+    while (attempt < maxAttempts) {
       attempt += 1;
       const { error, data } = await supabase.from('inventory_items').update(allowed).eq('id', item_id).select('*').single();
       if (!error) {
@@ -44,30 +45,43 @@ export async function POST(req: Request) {
         return NextResponse.json(result);
       }
 
-      const msg = String(error?.message || '').toLowerCase();
+      const msgRaw = String(error?.message || '');
+      const msg = msgRaw.toLowerCase();
+
+      // Look for quoted column names in the server error and remove them from the payload if present.
+      // Examples: "Could not find the 'support_multiplier' column of 'inventory_items' in the schema cache"
+      const colRegex = /'([a-z0-9_]+)'/gi;
+      let m: RegExpExecArray | null;
       let handled = false;
-      if (attempt === 1) {
-        for (const col of optionalCols) {
-          if (msg.includes(col) && msg.includes('could not find')) {
-            console.warn(`inventory update: ${col} missing in DB schema; retrying without it`);
-            delete allowed[col];
-            handled = true;
-          }
+      const removed: string[] = [];
+      while ((m = colRegex.exec(msgRaw)) !== null) {
+        const col = m[1];
+        if (col && Object.prototype.hasOwnProperty.call(allowed, col)) {
+          delete allowed[col];
+          removed.push(col);
+          handled = true;
+          console.warn(`inventory update: removed unknown DB column from payload: ${col}`);
         }
       }
 
-      if (handled) continue;
+      if (handled) {
+        // if we removed something, retry the update
+        console.warn(`inventory update: retrying without columns: ${removed.join(', ')}`);
+        continue;
+      }
 
-      // if the error indicates the DB schema is missing columns, return a 400 with details
-      const attemptedKeys = Object.keys(allowed);
+      // If the message clearly indicates a schema cache mismatch, return structured 400
       if (msg.includes('could not find') && msg.includes('schema cache')) {
-        console.warn('inventory update schema mismatch, attempted keys:', attemptedKeys, 'supabaseError:', error.message);
-        return NextResponse.json({ ok: false, error: 'schema_mismatch', message: 'DB schema missing column(s) expected by API', attemptedKeys, supabaseError: String(error.message) }, { status: 400 });
+        const attemptedKeys = Object.keys(allowed);
+        console.warn('inventory update schema mismatch, attempted keys:', attemptedKeys, 'supabaseError:', msgRaw);
+        return NextResponse.json({ ok: false, error: 'schema_mismatch', message: 'DB schema missing column(s) expected by API', attemptedKeys, supabaseError: String(msgRaw) }, { status: 400 });
       }
 
       console.error('inventory update error', error);
       return NextResponse.json({ error: error.message || String(error) }, { status: 500 });
     }
+
+    return NextResponse.json({ ok: false, error: 'schema_mismatch', message: 'DB schema missing column(s) expected by API', attemptedKeys: Object.keys(allowed), supabaseError: 'retries exhausted' }, { status: 400 });
   } catch (e: any) {
     console.error('inventory update exception', e);
     return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
