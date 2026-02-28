@@ -48,3 +48,5 @@ yarn.lock
 # Ignore personal files
 *.swp
 *.swo
+
+admin-app/built-exe/

@@ -281,7 +281,13 @@ export default function CheckoutPage(){
               // Create intent on server
               setLoading(true);
               try {
-                const sessionId = typeof window !== 'undefined' ? localStorage.getItem('morrisprints_session_id') : null;
+                let sessionId: string | null = null;
+                if (typeof window !== 'undefined') {
+                  try { sessionId = localStorage.getItem('morrisprints_session_id'); } catch (e) { sessionId = null }
+                  if (!sessionId) {
+                    try { sessionId = crypto.randomUUID(); localStorage.setItem('morrisprints_session_id', sessionId); } catch (e) { /* ignore */ }
+                  }
+                }
                 const headers: any = { 'Content-Type': 'application/json' };
                 if (sessionId) headers['x-session-id'] = sessionId;
                 const res = await fetch('/api/checkout/create-intent', { method: 'POST', headers, body: JSON.stringify({ cartId: null, customer, delivery: { method: deliveryMethod, address: deliveryAddress }, billing: billingSame ? { same: true } : { same: false, address: billingAddress } }) });

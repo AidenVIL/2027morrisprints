@@ -4,8 +4,8 @@ services:
     env: node
     plan: free
     region: oregon
-    buildCommand: "pnpm build"
-    startCommand: "pnpm start"
+    buildCommand: "npm run build"
+    startCommand: "npm run start"
     envVars:
       - key: NEXT_PUBLIC_SUPABASE_URL
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
